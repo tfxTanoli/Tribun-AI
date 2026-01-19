@@ -35,6 +35,7 @@ export interface SimulationConfig {
 }
 
 export interface ChatMessage {
+  id?: string;
   speaker: Speaker;
   text: string;
 }

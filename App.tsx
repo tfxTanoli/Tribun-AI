@@ -51,10 +51,15 @@ const App: React.FC = () => {
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false); // Kept for UI compatibility, always false for now
   const [isSpeechPaused, setIsSpeechPaused] = useState<boolean>(false); // Kept for UI compatibility
   const [currentStageName, setCurrentStageName] = useState<string>('');
+  const [isWaitingForAudio, setIsWaitingForAudio] = useState<boolean>(false);
 
   // State for objection flow
-  const [isObjectionPhase, setIsObjectionPhase] = useState<boolean>(false);
+  // const isObjectionPhase = simulationState === SimulationState.STARTED && currentTurn === null && chatHistory.length > 0 && chatHistory[chatHistory.length - 1].text.includes('[PAUSA_PARA_OBJECION]'); // Derived state would be better but keeping existing pattern
+  const [isObjectionPhase, setIsObjectionPhase] = useState<boolean>(false); // Replaced with logic or keep existing
+  // Keeping existing state variables as they are used elsewhere
   const [showObjectionOptions, setShowObjectionOptions] = useState<boolean>(false);
+
+  const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
 
 
   const chatSessionRef = useRef<any | null>(null);
@@ -127,7 +132,7 @@ const App: React.FC = () => {
     // which handles queueing and clean abstraction.
     messages.forEach(message => {
       if (message.speaker !== Speaker.PROFESOR) {
-        audioService.speak(message.text, message.speaker);
+        audioService.speak(message.text, message.speaker, message.id);
       }
     });
   }, [isTtsEnabled]);
@@ -171,6 +176,14 @@ const App: React.FC = () => {
   }, [isTtsEnabled, simulationState, isLoading, chatHistory, simulationConfig, speakMessagesSequentially]);
 
 
+
+  // Subscribe to active message ID updates from AudioService
+  useEffect(() => {
+    const unsubscribe = audioService.onCurrentMessageIdChange((id) => {
+      setActiveMessageId(id);
+    });
+    return unsubscribe;
+  }, []);
 
   const handleListen = () => {
     // unlockAudio(); // Triggered inside toggleListening if needed logic is there, but App.tsx used to invoke it explicitly.
@@ -237,6 +250,7 @@ const App: React.FC = () => {
     setEvaluation(null);
     setContextSummary(null);
     stopSpeech();
+    audioService.resetQueue();
 
     try {
       // 1. Generate dynamic context first
@@ -279,7 +293,7 @@ const App: React.FC = () => {
 
     } catch (error) {
       console.error("Error al iniciar la simulación:", error);
-      setChatHistory([{ speaker: Speaker.JUEZ, text: "Error al iniciar la simulación. Por favor, recargue la página." }]);
+      setChatHistory([{ speaker: Speaker.JUEZ, text: "Error al iniciar la simulación. Por favor, recargue la página.", id: crypto.randomUUID() }]);
       setSimulationState(SimulationState.INITIAL);
     } finally {
       setIsLoading(false);
@@ -292,6 +306,7 @@ const App: React.FC = () => {
     if (isListening) {
       stopListening();
     }
+    audioService.resetQueue();
     setSimulationState(SimulationState.INITIAL);
     setSimulationConfig(null);
     setChatHistory([]);
@@ -301,6 +316,7 @@ const App: React.FC = () => {
     setUserName('');
     setCurrentStageName('');
     setUserInput(''); // Reset input
+    setIsWaitingForAudio(false);
   };
 
   const parseAIResponse = (text: string): ChatMessageType[] => {
@@ -316,7 +332,7 @@ const App: React.FC = () => {
         else if (tag === '[MINISTERIO PÚBLICO]:') speaker = Speaker.MINISTERIO_PUBLICO;
         else if (tag === '[DEFENSA]:') speaker = Speaker.DEFENSA;
         else speaker = Speaker.TESTIGO;
-        messages.push({ speaker, text: '' });
+        messages.push({ speaker, text: '', id: crypto.randomUUID() });
         i++;
         continue;
       };
@@ -329,7 +345,7 @@ const App: React.FC = () => {
       else if (tag === '[TESTIGO]:') speaker = Speaker.TESTIGO;
 
       if (speaker) {
-        messages.push({ speaker, text: content });
+        messages.push({ speaker, text: content, id: crypto.randomUUID() });
         i++;
       } else if (messages.length > 0) {
         messages[messages.length - 1].text += tag;
@@ -342,7 +358,7 @@ const App: React.FC = () => {
           if (firstTag === '[MINISTERIO PÚBLICO]:') firstSpeaker = Speaker.MINISTERIO_PUBLICO;
           if (firstTag === '[DEFENSA]:') firstSpeaker = Speaker.DEFENSA;
           if (firstTag === '[TESTIGO]:') firstSpeaker = Speaker.TESTIGO;
-          messages.push({ speaker: firstSpeaker, text: tag })
+          messages.push({ speaker: firstSpeaker, text: tag, id: crypto.randomUUID() })
         }
       }
     }
@@ -401,7 +417,7 @@ const App: React.FC = () => {
 
     } catch (error) {
       console.error("Error en el stream de la IA:", error);
-      setChatHistory(prev => [...prev, { speaker: Speaker.JUEZ, text: "Ocurrió un error al procesar la respuesta." }]);
+      setChatHistory(prev => [...prev, { speaker: Speaker.JUEZ, text: "Ocurrió un error al procesar la respuesta.", id: crypto.randomUUID() }]);
     } finally {
       setIsLoading(false);
     }
@@ -429,7 +445,7 @@ const App: React.FC = () => {
 
     if (isMetaQuestion) {
       // Keep brackets in display to differentiate visually in history.
-      const userMessage: ChatMessageType = { speaker: simulationConfig?.userRole || Speaker.DEFENSA, text: trimmedInput };
+      const userMessage: ChatMessageType = { speaker: simulationConfig?.userRole || Speaker.DEFENSA, text: trimmedInput, id: crypto.randomUUID() };
 
       // Set the ref to the index *after* this user message will be added.
       historyLengthBeforeLoadingRef.current = chatHistory.length + 1;
@@ -448,7 +464,7 @@ const App: React.FC = () => {
         const cleanQuestion = trimmedInput.slice(1, -1).trim();
         const responseText = await askProfessor(cleanQuestion, chatHistory, simulationConfig);
 
-        const professorMessage: ChatMessageType = { speaker: Speaker.PROFESOR, text: responseText };
+        const professorMessage: ChatMessageType = { speaker: Speaker.PROFESOR, text: responseText, id: crypto.randomUUID() };
         setChatHistory(prev => [...prev, professorMessage]);
 
         // NOTE: We do NOT trigger speakMessagesSequentially for Professor messages
@@ -456,7 +472,7 @@ const App: React.FC = () => {
 
       } catch (error) {
         console.error("Error consultando al profesor:", error);
-        setChatHistory(prev => [...prev, { speaker: Speaker.PROFESOR, text: "Hubo un error al procesar tu duda. Intenta de nuevo." }]);
+        setChatHistory(prev => [...prev, { speaker: Speaker.PROFESOR, text: "Hubo un error al procesar tu duda. Intenta de nuevo.", id: crypto.randomUUID() }]);
       } finally {
         setIsLoading(false);
       }
@@ -466,7 +482,7 @@ const App: React.FC = () => {
     // NORMAL TRIAL FLOW
     if (!chatSessionRef.current) return;
 
-    const userMessage: ChatMessageType = { speaker: simulationConfig?.userRole || Speaker.DEFENSA, text: userInput };
+    const userMessage: ChatMessageType = { speaker: simulationConfig?.userRole || Speaker.DEFENSA, text: userInput, id: crypto.randomUUID() };
     setChatHistory(prev => [...prev, userMessage]);
     setUserInput('');
 
@@ -496,6 +512,7 @@ const App: React.FC = () => {
     const userMessage: ChatMessageType = {
       speaker: simulationConfig.userRole,
       text: objectionMessageText,
+      id: crypto.randomUUID()
     };
     setChatHistory(prev => [...prev, userMessage]);
 
@@ -529,6 +546,19 @@ const App: React.FC = () => {
     if (!simulationConfig) {
       console.error("No se encontró la configuración de la simulación para la evaluación.");
       return;
+    }
+
+    // Check if audio is still playing
+    const queueStatus = audioService.getQueueStatus();
+    if (queueStatus.isActive) {
+      console.log('[App] Waiting for audio queue to complete before evaluation...');
+      setIsWaitingForAudio(true);
+
+      // Wait for all audio to complete
+      await audioService.waitForQueueCompletion();
+
+      setIsWaitingForAudio(false);
+      console.log('[App] Audio queue completed, proceeding with evaluation');
     }
 
     historyLengthBeforeLoadingRef.current = chatHistory.length;
@@ -675,7 +705,12 @@ const App: React.FC = () => {
               ) : (
                 <div className="space-y-6">
                   {chatHistory.map((msg, index) => (
-                    <ChatMessage key={index} message={msg} userRole={simulationConfig?.userRole || Speaker.DEFENSA} />
+                    <ChatMessage
+                      key={msg.id || index}
+                      message={msg}
+                      userRole={simulationConfig?.userRole || Speaker.DEFENSA}
+                      isActive={activeMessageId === msg.id && !!msg.id}
+                    />
                   ))}
                   {isLoading && (simulationState === SimulationState.STARTED || simulationState === SimulationState.ENDED) && (
                     <div className="flex justify-start">
@@ -834,10 +869,10 @@ const App: React.FC = () => {
                             {!isObjectionPhase && (
                               <button
                                 onClick={handleEvaluation}
-                                className={`bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 disabled:bg-slate-400 disabled:cursor-not-allowed flex-shrink-0 shadow-md`}
-                                disabled={isLoading}
+                                className={`bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 disabled:bg-slate-400 disabled:cursor-not-allowed flex-shrink-0 shadow-md ${isWaitingForAudio ? 'opacity-75' : ''}`}
+                                disabled={isLoading || isWaitingForAudio}
                               >
-                                Finalizar
+                                {isWaitingForAudio ? 'Esperando audio...' : 'Finalizar'}
                               </button>
                             )}
                           </div>
@@ -849,10 +884,10 @@ const App: React.FC = () => {
                     {!isObjectionPhase && simulationState !== SimulationState.ENDED && (
                       <button
                         onClick={handleEvaluation}
-                        className={`sm:hidden w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 disabled:bg-slate-400 disabled:cursor-not-allowed flex-shrink-0 shadow-md`}
-                        disabled={isLoading}
+                        className={`sm:hidden w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 disabled:bg-slate-400 disabled:cursor-not-allowed flex-shrink-0 shadow-md ${isWaitingForAudio ? 'opacity-75' : ''}`}
+                        disabled={isLoading || isWaitingForAudio}
                       >
-                        Finalizar y Evaluar
+                        {isWaitingForAudio ? 'Esperando audio...' : 'Finalizar y Evaluar'}
                       </button>
                     )}
                     {/* MOBILE ONLY: View Eval button when ended */}
