@@ -204,6 +204,12 @@ app.post('/api/generate-config', async (req, res) => {
 });
 
 
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
-});
+// Export app for Vercel
+export default app;
+
+// Only listen locally
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(port, () => {
+        console.log(`Server running at http://localhost:${port}`);
+    });
+}
