@@ -1,0 +1,7 @@
+{
+  "name": "final",
+  "description": "An educational simulator for Mexican oral criminal hearings, where the user plays the role of the defense attorney and interacts with an AI judge and prosecutor. The application provides a realistic procedural experience and concludes with a detailed performance evaluation.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

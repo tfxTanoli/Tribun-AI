@@ -1,0 +1,7 @@
+Checking TARGET voices...
+VOICE: es-ES-Neural2-A | GENDER: FEMALE
+VOICE: es-ES-Neural2-E | GENDER: FEMALE
+VOICE: es-US-Neural2-A | GENDER: FEMALE
+VOICE: es-US-Neural2-B | GENDER: MALE
+VOICE: es-US-Neural2-A | GENDER: FEMALE
+VOICE: es-US-Neural2-B | GENDER: MALE
