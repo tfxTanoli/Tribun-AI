@@ -14,6 +14,16 @@ const port = 3001; // Running on 3001 to avoid conflict with Vite (3000)
 app.use(cors());
 app.use(bodyParser.json());
 
+// Status check endpoint
+app.get('/', (req, res) => {
+    res.json({
+        status: "online",
+        message: "TribunAI Backend is running successfully",
+        role: "API Server",
+        timestamp: new Date().toISOString()
+    });
+});
+
 const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) {
     console.error("ERROR: GEMINI_API_KEY is not set in .env.local");
