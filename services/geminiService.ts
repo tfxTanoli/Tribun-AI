@@ -197,6 +197,9 @@ export const getEvaluation = async (transcript: string, userRole: Speaker, confi
     required: ['transcript', 'feedback', 'comments', 'finalScore'],
   };
 
+  console.log("Sending transcript to evaluation (Length):", transcript.length);
+  console.log("Transcript Preview:", transcript.substring(0, 200));
+
   const response = await fetch('/api/evaluate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -209,9 +212,18 @@ export const getEvaluation = async (transcript: string, userRole: Speaker, confi
   }
 
   const jsonText = await response.text();
+  console.log("Raw Evaluation Response:", jsonText);
+
+  // Clean markdown if present
+  const cleanJsonText = jsonText.replace(/```json\n?|\n?```/g, '').trim();
+
   try {
-    return JSON.parse(jsonText) as Evaluation;
+    const parsed = JSON.parse(cleanJsonText) as Evaluation;
+    console.log("Parsed Evaluation:", parsed);
+    return parsed;
   } catch (e) {
+    console.error("JSON Parse Error:", e);
+    console.error("Failed JSON Text:", cleanJsonText);
     throw new Error("Invalid JSON evaluation response from server.");
   }
 };
