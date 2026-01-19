@@ -10,6 +10,8 @@ interface RemoteChatSession {
   sessionId: string;
 }
 
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
 export const generateDynamicContext = async (config: SimulationConfig): Promise<string> => {
   // Logic for prompts moved to server (or we send prompt to server). 
   // To minimize server complexity, we construct the prompt here (safe, it's just text)
@@ -17,7 +19,7 @@ export const generateDynamicContext = async (config: SimulationConfig): Promise<
 
   const contextPrompt = await buildContextPrompt(config);
 
-  const response = await fetch('/api/generate-context', {
+  const response = await fetch(`${API_BASE}/api/generate-context`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt: contextPrompt })
@@ -63,7 +65,7 @@ export const startChatSession = (config: SimulationConfig, dynamicContext: strin
   };
 
   const streamPromise = (async function* () {
-    const response = await fetch('/api/chat/start', {
+    const response = await fetch(`${API_BASE}/api/chat/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -101,7 +103,7 @@ export const continueChat = async (session: any, message: string): Promise<Async
   const sessionId = await session.sessionIdPromise;
 
   return (async function* () {
-    const response = await fetch('/api/chat/continue', {
+    const response = await fetch(`${API_BASE}/api/chat/continue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId, message })
@@ -139,7 +141,7 @@ export const askProfessor = async (question: string, contextHistory: ChatMessage
     Responde pedagógicamente y guía según el CNPP.
     `;
 
-  const response = await fetch('/api/ask-professor', {
+  const response = await fetch(`${API_BASE}/api/ask-professor`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt })
@@ -200,7 +202,7 @@ export const getEvaluation = async (transcript: string, userRole: Speaker, confi
   console.log("Sending transcript to evaluation (Length):", transcript.length);
   console.log("Transcript Preview:", transcript.substring(0, 200));
 
-  const response = await fetch('/api/evaluate', {
+  const response = await fetch(`${API_BASE}/api/evaluate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, schema })
@@ -260,7 +262,7 @@ export const generateRandomSimulationConfig = async (difficulty?: string, crimeL
     required: ['crime', 'stage', 'subStage', 'crimeContext', 'defendantProfile', 'prosecutorWitness', 'defenseWitness'],
   };
 
-  const response = await fetch('/api/generate-config', {
+  const response = await fetch(`${API_BASE}/api/generate-config`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, schema })
