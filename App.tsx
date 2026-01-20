@@ -126,7 +126,9 @@ const App: React.FC = () => {
   // Removed cleanTextForSpeech (logic moved to AudioService)
 
   const speakMessagesSequentially = useCallback((messages: ChatMessageType[]) => {
-    if (!isTtsEnabled || messages.length === 0) return; // Removed window.speechSynthesis.speaking check
+    if (!isTtsEnabled || messages.length === 0) {
+      return;
+    }
 
     // Logic simplified: All playback is delegated to AudioService
     // which handles queueing and clean abstraction.
@@ -383,8 +385,15 @@ const App: React.FC = () => {
     const userMessageIndex = isUserMessage ? chatHistory.length : chatHistory.length - 1;
 
     try {
-      const stream = await streamPromise;
+      // TIMEOUT PROMISE
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout waiting for AI response")), 30000)
+      );
+
+      // Race against timeout
+      const stream = await Promise.race([streamPromise, timeoutPromise]);
       let accumulatedText = '';
+      let hasParsedContent = false;
 
       for await (const chunk of stream) {
         if (chunk.text) {
@@ -398,11 +407,26 @@ const App: React.FC = () => {
 
           const newMessages = parseAIResponse(cleanText.replace('[PAUSA_PARA_OBJECION]', ''));
 
+          if (newMessages.length > 0) {
+            hasParsedContent = true;
+          }
+
           setChatHistory(prevHistory => {
             const baseHistory = prevHistory.slice(0, userMessageIndex + 1);
             return [...baseHistory, ...newMessages];
           });
         }
+      }
+
+      // FALLBACK IF NO CONTENT PARSED
+      if (!hasParsedContent && accumulatedText.trim().length > 0) {
+        console.warn("AI responded but no tags found. Injecting fallback.");
+        // If we have text but no tags, assume it's the Juez speaking as fail-safe
+        const fallbackMessage = { speaker: Speaker.JUEZ, text: accumulatedText, id: crypto.randomUUID() };
+        setChatHistory(prev => {
+          const baseHistory = prev.slice(0, userMessageIndex + 1);
+          return [...baseHistory, fallbackMessage];
+        });
       }
 
       if (accumulatedText.includes('[PAUSA_PARA_OBJECION]')) {
@@ -417,12 +441,24 @@ const App: React.FC = () => {
           return;
         }
 
-        setCurrentTurn(nextTurn);
+        // TURN FALLBACK
+        if (!nextTurn && !hasParsedContent) {
+          // If we parsed nothing and have no turn, force turn to user to unblock
+          setCurrentTurn(simulationConfig?.userRole || Speaker.DEFENSA);
+        } else {
+          setCurrentTurn(nextTurn);
+        }
       }
 
     } catch (error) {
       console.error("Error en el stream de la IA:", error);
-      setChatHistory(prev => [...prev, { speaker: Speaker.JUEZ, text: "Ocurrió un error al procesar la respuesta.", id: crypto.randomUUID() }]);
+      let errorMsg = "Ocurrió un error al procesar la respuesta.";
+      if (error instanceof Error && error.message.includes("Timeout")) {
+        errorMsg = "La IA tardó demasiado en responder. Intenta enviar tu mensaje nuevamente.";
+      }
+      setChatHistory(prev => [...prev, { speaker: Speaker.JUEZ, text: errorMsg, id: crypto.randomUUID() }]);
+      // Force turn back to user so they can retry
+      setCurrentTurn(simulationConfig?.userRole || Speaker.DEFENSA);
     } finally {
       setIsLoading(false);
     }

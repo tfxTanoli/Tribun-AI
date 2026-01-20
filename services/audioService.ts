@@ -57,6 +57,9 @@ export class AudioService {
     private currentMessageId: string | null = null;
     private messageIdListeners: Array<(id: string | null) => void> = [];
 
+    // Store resolve function to unblock queue on cancel
+    private currentPlaybackResolver: (() => void) | null = null;
+
     // Fallback voices for retry logic (ordered by preference)
     private fallbackVoices: Map<Speaker, string[]> = new Map([
         [Speaker.JUEZ, ['es-ES-Neural2-F', 'es-US-Neural2-B', 'es-US-Polyglot-1']], // Male fallbacks
@@ -548,27 +551,30 @@ export class AudioService {
      */
     private playAudio(audioUrl: string): Promise<void> {
         return new Promise((resolve) => {
+            this.currentPlaybackResolver = resolve;
             this.currentAudio = new Audio(audioUrl);
             this.isPlaying = true;
 
-            this.currentAudio.onended = () => {
+            const cleanup = () => {
                 this.isPlaying = false;
                 this.currentAudio = null;
+                this.currentPlaybackResolver = null;
                 resolve();
             };
+
+            this.currentAudio.onended = cleanup;
 
             this.currentAudio.onerror = (error) => {
                 console.error('[AudioService] Audio playback error:', error);
-                this.isPlaying = false;
-                this.currentAudio = null;
-                resolve(); // Resolve anyway to continue queue
+                cleanup();
             };
 
             this.currentAudio.play().catch((error) => {
-                console.error('[AudioService] Failed to play audio:', error);
-                this.isPlaying = false;
-                this.currentAudio = null;
-                resolve();
+                // If error is "The play() request was interrupted", it might be due to cancel()
+                if (error.name !== 'AbortError') {
+                    console.error('[AudioService] Failed to play audio:', error);
+                }
+                cleanup();
             });
         });
     }
@@ -588,6 +594,12 @@ export class AudioService {
         if (this.currentAudio) {
             this.currentAudio.pause();
             this.currentAudio = null;
+        }
+
+        // Unblock any awaiting playAudio promise
+        if (this.currentPlaybackResolver) {
+            this.currentPlaybackResolver();
+            this.currentPlaybackResolver = null;
         }
 
         // Clear queue and clean up URLs

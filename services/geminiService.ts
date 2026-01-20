@@ -56,8 +56,8 @@ export const startChatSession = (config: SimulationConfig, dynamicContext: strin
   // Actually the original returned { session, streamPromise }.
   // So we can start the fetch inside the promise.
 
-  let sessionIdResolver: (id: string) => void;
-  const sessionIdPromise = new Promise<string>(resolve => sessionIdResolver = resolve);
+  let sessionIdResolver: (id: string | null) => void;
+  const sessionIdPromise = new Promise<string | null>(resolve => sessionIdResolver = resolve);
 
   // Mock session object that App.tsx will hold
   const sessionMock = {
@@ -65,22 +65,34 @@ export const startChatSession = (config: SimulationConfig, dynamicContext: strin
   };
 
   const streamPromise = (async function* () {
-    const response = await fetch(`${API_BASE}/api/chat/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction,
-        initialMessage
-      })
-    });
+    let response;
+    try {
+      response = await fetch(`${API_BASE}/api/chat/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction,
+          initialMessage
+        })
+      });
+    } catch (e) {
+      if (sessionIdResolver) sessionIdResolver(null); // Ensure unblock
+      throw e;
+    }
 
     if (!response.ok) {
+      if (sessionIdResolver) sessionIdResolver(null); // Ensure unblock
       const errorText = await response.text();
       throw new Error(`Chat Start Error (${response.status}): ${errorText}`);
     }
 
     const sessId = response.headers.get('X-Session-ID');
-    if (sessId && sessionIdResolver) sessionIdResolver(sessId);
+    if (sessId && sessionIdResolver) {
+      sessionIdResolver(sessId);
+    } else if (sessionIdResolver) {
+      console.warn("No X-Session-ID header in start response");
+      sessionIdResolver(null); // Resolve with null so we don't hang, but next call might fail
+    }
 
     if (!response.body) throw new Error("No response body from chat start");
     const reader = response.body.getReader();
@@ -101,6 +113,12 @@ export const startChatSession = (config: SimulationConfig, dynamicContext: strin
 
 export const continueChat = async (session: any, message: string): Promise<AsyncGenerator<GenerateContentResponse>> => {
   const sessionId = await session.sessionIdPromise;
+
+  if (!sessionId) {
+    // If we never got a session ID, we can't continue the chat on the server properly.
+    // However, to prevent UI freeze, we throw an error here so App.tsx catches it.
+    throw new Error("Cannot continue chat: No Session ID was initialized.");
+  }
 
   return (async function* () {
     const response = await fetch(`${API_BASE}/api/chat/continue`, {
