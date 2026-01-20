@@ -131,7 +131,8 @@ const App: React.FC = () => {
     // Logic simplified: All playback is delegated to AudioService
     // which handles queueing and clean abstraction.
     messages.forEach(message => {
-      if (message.speaker !== Speaker.PROFESOR) {
+      // Filter: Don't speak Professor messages OR User's own messages (prevent echo)
+      if (message.speaker !== Speaker.PROFESOR && message.speaker !== simulationConfig?.userRole) {
         audioService.speak(message.text, message.speaker, message.id);
       }
     });
@@ -211,7 +212,7 @@ const App: React.FC = () => {
     // FIX: Removed 'i' flag to enforce strict case matching for the tag key [TURNO: ...].
     // This prevents false positives if the AI casually mentions a role in brackets or uses a non-standard tag.
     // Also handling accent variations in regex just in case.
-    const turnRegex = /\[TURNO:\s*(Juez|Ministerio P[uú]blico|Defensa|Testigo)\]\s*$/;
+    const turnRegex = /\[TURNO:\s*(Juez|Ministerio P[uú]blico|Defensa|Testigo|Secretario)\]\s*$/;
     const match = text.match(turnRegex);
     let nextTurn = null;
 
@@ -225,6 +226,7 @@ const App: React.FC = () => {
       else if (normalize(roleStr) === normalize(Speaker.MINISTERIO_PUBLICO.toLowerCase())) nextTurn = Speaker.MINISTERIO_PUBLICO;
       else if (normalize(roleStr) === normalize(Speaker.DEFENSA.toLowerCase())) nextTurn = Speaker.DEFENSA;
       else if (normalize(roleStr) === normalize(Speaker.TESTIGO.toLowerCase())) nextTurn = Speaker.TESTIGO;
+      else if (normalize(roleStr) === normalize(Speaker.SECRETARIO.toLowerCase())) nextTurn = Speaker.SECRETARIO;
     }
 
     return { cleanText: text, nextTurn, detectedStage };
@@ -321,16 +323,17 @@ const App: React.FC = () => {
 
   const parseAIResponse = (text: string): ChatMessageType[] => {
     const messages: ChatMessageType[] = [];
-    const parts = text.split(/(\[JUEZ\]:|\[MINISTERIO PÚBLICO\]:|\[DEFENSA\]:|\[TESTIGO\]:)/g).filter(Boolean);
+    const parts = text.split(/(\[JUEZ\]:|\[MINISTERIO PÚBLICO\]:|\[DEFENSA\]:|\[TESTIGO\]:|\[SECRETARIO\]:)/g).filter(Boolean);
 
     for (let i = 0; i < parts.length; i++) {
       const tag = parts[i].trim();
       const content = parts[i + 1]?.trim();
-      if (!content && (tag === '[JUEZ]:' || tag === '[MINISTERIO PÚBLICO]:' || tag === '[DEFENSA]:' || tag === '[TESTIGO]:')) {
+      if (!content && (tag === '[JUEZ]:' || tag === '[MINISTERIO PÚBLICO]:' || tag === '[DEFENSA]:' || tag === '[TESTIGO]:' || tag === '[SECRETARIO]:')) {
         let speaker: Speaker;
         if (tag === '[JUEZ]:') speaker = Speaker.JUEZ;
         else if (tag === '[MINISTERIO PÚBLICO]:') speaker = Speaker.MINISTERIO_PUBLICO;
         else if (tag === '[DEFENSA]:') speaker = Speaker.DEFENSA;
+        else if (tag === '[SECRETARIO]:') speaker = Speaker.SECRETARIO;
         else speaker = Speaker.TESTIGO;
         messages.push({ speaker, text: '', id: crypto.randomUUID() });
         i++;
@@ -343,6 +346,7 @@ const App: React.FC = () => {
       else if (tag === '[MINISTERIO PÚBLICO]:') speaker = Speaker.MINISTERIO_PUBLICO;
       else if (tag === '[DEFENSA]:') speaker = Speaker.DEFENSA;
       else if (tag === '[TESTIGO]:') speaker = Speaker.TESTIGO;
+      else if (tag === '[SECRETARIO]:') speaker = Speaker.SECRETARIO;
 
       if (speaker) {
         messages.push({ speaker, text: content, id: crypto.randomUUID() });
@@ -351,13 +355,14 @@ const App: React.FC = () => {
         messages[messages.length - 1].text += tag;
       } else if (tag) {
         // Handles text before the first tag, attributing it to the first speaker.
-        const firstMessageMatch = text.match(/(\[JUEZ\]:|\[MINISTERIO PÚBLICO\]:|\[DEFENSA\]:|\[TESTIGO\]:)/);
+        const firstMessageMatch = text.match(/(\[JUEZ\]:|\[MINISTERIO PÚBLICO\]:|\[DEFENSA\]:|\[TESTIGO\]:|\[SECRETARIO\]:)/);
         if (firstMessageMatch) {
           const firstTag = firstMessageMatch[1].trim();
           let firstSpeaker: Speaker = Speaker.JUEZ;
           if (firstTag === '[MINISTERIO PÚBLICO]:') firstSpeaker = Speaker.MINISTERIO_PUBLICO;
           if (firstTag === '[DEFENSA]:') firstSpeaker = Speaker.DEFENSA;
           if (firstTag === '[TESTIGO]:') firstSpeaker = Speaker.TESTIGO;
+          if (firstTag === '[SECRETARIO]:') firstSpeaker = Speaker.SECRETARIO;
           messages.push({ speaker: firstSpeaker, text: tag, id: crypto.randomUUID() })
         }
       }

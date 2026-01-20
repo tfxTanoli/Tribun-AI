@@ -4,6 +4,7 @@ export enum Speaker {
   DEFENSA = "Defensa",
   TESTIGO = "Testigo",
   PROFESOR = "Profesor",
+  SECRETARIO = "Secretario",
 }
 
 export interface VoiceOption {
@@ -18,6 +19,7 @@ export interface VoiceSettings {
   [Speaker.MINISTERIO_PUBLICO]?: string;
   [Speaker.DEFENSA]?: string;
   [Speaker.TESTIGO]?: string;
+  [Speaker.SECRETARIO]?: string;
 }
 
 export interface SimulationConfig {

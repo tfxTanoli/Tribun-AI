@@ -293,7 +293,10 @@ const getProceduralStructure = (config: SimulationConfig, dynamicContext: string
   **Estructura Procesal Estricta de la Audiencia Inicial (Art. 307 y ss. CNPP):**
   Esta audiencia se desarrollará en etapas claras y sucesivas. Debes seguir este orden rigurosamente, anunciando el inicio de cada etapa. No puedes saltar ni mezclar etapas.
   
-  1.  **Apertura de la Audiencia:** El Juez inicia, se identifica y verifica la presencia de las partes.
+  1.  **Apertura de la Audiencia:**
+      a. **[SECRETARIO]:** Anuncia el inicio de la grabación, la fecha, hora, lugar, número de causa y el Juez que preside. Pide a los asistentes guardar silencio y decoro.
+      b. **[JUEZ]:** Se identifica formalmente, pregunta a las partes (MP y Defensa) sus generales y verifica la presencia del Imputado.
+      c. **[JUEZ]:** Declara formalmente abierta la audiencia.
   2.  **Control de Legalidad de la Detención:**
       a. El Juez da el uso de la voz al Ministerio Público para que justifique las razones de la detención.
       b. El Juez da el uso de la voz a la Defensa para que debata la justificación del MP.
@@ -326,7 +329,9 @@ const getProceduralStructure = (config: SimulationConfig, dynamicContext: string
   **Estructura Procesal Estricta de la Etapa Intermedia (Fase Oral - Art. 344 y ss. CNPP):**
   Tu rol es simular la fase oral de la Audiencia Intermedia. Asume que la fase escrita (acusación del MP, contestación de la Defensa) ya se ha completado.
   
-  1.  **Apertura de la Audiencia:** El Juez de Control inicia, verifica la presencia de las partes.
+  1.  **Apertura de la Audiencia:**
+      a. **[SECRETARIO]:** Anuncia el inicio de la audiencia de Etapa Intermedia, causa penal y juez que preside.
+      b. **[JUEZ]:** Verifica la presencia de las partes y declara abierta la audiencia para la fase oral.
   2.  **Exposición Sintética:** El Juez solicita al MP y a la Defensa que expongan resumidamente sus escritos de acusación y contestación.
   3.  **Incidencias y Excepciones:** Se abre debate sobre posibles incidencias o excepciones presentadas.
   4.  **Acuerdos Probatorios:** El Juez pregunta a las partes si han celebrado acuerdos probatorios y, en su caso, los aprueba.
@@ -340,7 +345,9 @@ const getProceduralStructure = (config: SimulationConfig, dynamicContext: string
   **Estructura Procesal Estricta de la Audiencia de Juicio Oral (Art. 391 y ss. CNPP):**
   Simularás el debate ante el Tribunal de Enjuiciamiento.
   
-  1.  **Apertura de la Audiencia de Debate:** El Juez Presidente verifica la presencia de las partes y declara abierta la audiencia.
+  1.  **Apertura de la Audiencia de Debate:**
+      a. **[SECRETARIO]:** Anuncia el inicio del Juicio Oral, cita el auto de apertura, menciona a los integrantes del Tribunal y llama a las partes y testigos (si no están segregados).
+      b. **[JUEZ]:** Verifica presencia de partes y declara abierto el debate.
   2.  **Alegatos de Apertura:**
       a. El Juez cede la palabra al Ministerio Público.
       b. El Juez cede la palabra a la Defensa.
@@ -397,6 +404,7 @@ const generateSystemInstruction = (config: SimulationConfig, dynamicContext: str
     [Speaker.MINISTERIO_PUBLICO]: "Ministerio Público (MP)",
     [Speaker.DEFENSA]: "Abogado Defensor",
     [Speaker.TESTIGO]: "Testigo (Cargo o Descargo)",
+    [Speaker.SECRETARIO]: "Secretario de Audiencia (Encargado de Sala)",
   };
 
   const aiRoles = Object.values(Speaker).filter(role => role !== userRole);
@@ -514,6 +522,7 @@ const generateSystemInstruction = (config: SimulationConfig, dynamicContext: str
           - \`[MINISTERIO PÚBLICO]:\`
           - \`[DEFENSA]:\`
           - \`[TESTIGO]:\`
+          - \`[SECRETARIO]:\`
       c. **Formatos INCORRECTOS (TOTALMENTE PROHIBIDOS):**
           - Errores de tipeo: \`[MINISTERIO P-UBLICO]:\`, \`[MIN-ISTERIO PÚBLICO]:\`, \`[JUES]:\`
           - Errores de acentuación: \`[MINISTERIO PUBLICO]:\` (sin acento)

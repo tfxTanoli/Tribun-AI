@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { ChatMessage as ChatMessageType, Speaker } from '../types';
-import { GavelIcon, ProsecutorIcon, UserIcon, WitnessIcon, ProfessorIcon } from './icons';
+import { GavelIcon, ProsecutorIcon, UserIcon, WitnessIcon, ProfessorIcon, SecretaryIcon } from './icons';
 
 /* New Prop Interface */
 interface ChatMessageProps {
@@ -26,6 +26,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, userRole, isActive }
         return <WitnessIcon className="w-8 h-8 text-purple-600" />;
       case Speaker.PROFESOR:
         return <ProfessorIcon className="w-8 h-8 text-amber-600" />;
+      case Speaker.SECRETARIO:
+        return <SecretaryIcon className="w-8 h-8 text-slate-600" />;
       default:
         return null;
     }
@@ -38,6 +40,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, userRole, isActive }
       case Speaker.DEFENSA: return "text-[#00afc7]";
       case Speaker.TESTIGO: return "text-purple-600";
       case Speaker.PROFESOR: return "text-amber-700";
+      case Speaker.SECRETARIO: return "text-slate-600";
       default: return "text-gray-500";
     }
   }
