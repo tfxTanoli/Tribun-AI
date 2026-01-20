@@ -51,7 +51,7 @@ app.post('/api/generate-context', async (req, res) => {
     try {
         const { prompt } = req.body;
         const stream = await ai.models.generateContentStream({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.0-flash',
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             config: { temperature: 0.8 }
         });
@@ -77,7 +77,7 @@ app.post('/api/chat/start', async (req, res) => {
         const { systemInstruction, initialMessage, modelName } = req.body;
         const sessionId = uuidv4();
 
-        const model = 'gemini-2.5-pro'; // Using available model
+        const model = 'gemini-2.0-flash'; // Using available model
 
         const chat = ai.chats.create({
             model: model,
@@ -139,7 +139,7 @@ app.post('/api/ask-professor', async (req, res) => {
     try {
         const { prompt } = req.body;
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.0-flash',
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
 
@@ -170,7 +170,7 @@ app.post('/api/evaluate', async (req, res) => {
         }
 
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.0-flash',
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             config: config
         });
@@ -188,7 +188,7 @@ app.post('/api/generate-config', async (req, res) => {
     try {
         const { prompt, schema } = req.body;
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.0-flash',
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             config: {
                 responseMimeType: "application/json",

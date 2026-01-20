@@ -29,6 +29,10 @@ const VOICE_METADATA: { [key: string]: 'MALE' | 'FEMALE' } = {
     'es-US-Neural2-A': 'FEMALE',
     'es-US-News-F': 'FEMALE',
     'es-US-Polyglot-1': 'MALE',
+    // MX - Mexico
+    'es-MX-Standard-A': 'FEMALE',
+    'es-MX-Standard-B': 'MALE',
+    'es-MX-Standard-C': 'FEMALE',
 };
 
 export class AudioService {
