@@ -578,7 +578,15 @@ const getPreviousStages = (currentSubStage: string): string[] => {
 
 const buildContextPrompt = async (config: SimulationConfig): Promise<string> => {
   if (config.subStage === 'Calificación de la Detención') {
-    return "Iniciando desde la primera etapa: Control de Legalidad de la Detención.";
+    return `Actúa como Secretario de Acuerdos. Genera un Resumen de Apertura para la audiencia de Control de Detención bajo el sistema acusatorio mexicano (CNPP).
+    
+    Datos del Caso:
+    - Delito: ${config.crime}
+    - Hechos (Fáctico): ${config.crimeContext}
+    - Imputado (Perfil): ${config.defendantProfile || "No especificado"}
+    
+    Objetivo: Redactar un resumen breve y directo de los hechos que motivan la detención, para que el Juez tenga contexto inmediato. 
+    ESTILO: Narrativo, técnico-jurídico, neutral. NO expliques qué es la audiencia, ve directo a los hechos del caso.`;
   }
 
   const previousStages = getPreviousStages(config.subStage);
@@ -591,13 +599,12 @@ const buildContextPrompt = async (config: SimulationConfig): Promise<string> => 
     La etapa que iniciará AHORA es: **${config.subStage}**.
 
     **REQUISITOS DEL RESUMEN (ESTRUCTURA OBLIGATORIA):**
-    1.  **SÍNTESIS DE LOS HECHOS:** Redacta una narrativa jurídica coherente de cómo ocurrió el delito basándote en: "${config.crimeContext || "Sin detalles"}" y el tipo penal.
-    2.  **IDENTIFICACIÓN DE LAS PARTES:** Detalla quién es el Imputado (Perfil: ${config.defendantProfile || "No especificado"}), la Víctima/Ofendido y los representantes legales.
-    3.  **PERFIL DE ÓRGANOS DE PRUEBA:** Resume quiénes son los testigos mencionados (Cargo: ${config.prosecutorWitness || "No especificado"} / Descargo: ${config.defenseWitness || "No especificado"}) y qué se espera de su testimonio.
-    4.  **CRONOLOGÍA DE RESOLUCIONES PREVIAS:** Explica detalladamente QUÉ pasó y CÓMO se resolvió CADA UNA de las siguientes subetapas ya concluidas: ${previousStages.join(', ')}.
-        *Ejemplo: En el Control de Detención se ratificó la legalidad por flagrancia; en la Imputación el MP expuso que...*
-    5.  **ESTADO PROCESAL ACTUAL:** Define exactamente en qué punto nos quedamos para dar pie a la etapa de ${config.subStage}.
+    1.  **SÍNTESIS INTEGRAL DE LOS HECHOS (ORIGEN DEL CASO):** Redacta una narrativa detallada de los hechos delictivos originales (tiempo, lugar, modo). No omitas el origen del conflicto solo por estar en una etapa avanzada.
+    2.  **IDENTIFICACIÓN DE LAS PARTES:** Detalla quién es el Imputado (Perfil: ${config.defendantProfile || "No especificado"}), la Víctima/Ofendido y los representantes.
+    3.  **PERFIL DE ÓRGANOS DE PRUEBA:** Resume quiénes son los testigos y qué se espera de su testimonio.
+    4.  **HISTORIAL PROCESAL COMPLETO (CRONOLOGÍA):** Resume de manera concatenada qué ocurrió en CADA UNA de las etapas previas: ${previousStages.join(', ')}. Evita enfocarte solo en la última.
+    5.  **ESTADO PROCESAL ACTUAL:** Define el punto de partida exacto para la etapa de ${config.subStage}.
 
-    Utiliza un lenguaje técnico-jurídico formal, solemne y preciso propio de los tribunales de Querétaro.
+    Utiliza un lenguaje técnico-jurídico formal, pero asegúrate de que el Juez tenga la "película completa" del caso, no solo un fragmento.
     `;
 }

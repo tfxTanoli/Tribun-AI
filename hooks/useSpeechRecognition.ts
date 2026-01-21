@@ -9,12 +9,39 @@ export const useSpeechRecognition = ({ onResult }: UseSpeechRecognitionProps) =>
     const [isListening, setIsListening] = useState<boolean>(false);
     const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
     const preListenInputRef = useRef<string>('');
+    const shouldProcessResultRef = useRef<boolean>(false);
 
-    useEffect(() => {
+    const stopListening = useCallback(() => {
+        // Immediately update UI state
+        setIsListening(false);
+        shouldProcessResultRef.current = false; // Ignore any subsequent results
+
+        if (speechRecognitionRef.current) {
+            try {
+                speechRecognitionRef.current.stop();
+            } catch (e) {
+                // Ignore errors if already stopped
+            }
+        }
+    }, []);
+
+    const startListening = useCallback((currentInput: string) => {
+        audioService.unlockAudio();
+        audioService.cancel();
+
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
-            console.warn("Speech Recognition API is not supported in this browser.");
+            console.warn("Speech Recognition API is not supported.");
             return;
+        }
+
+        // Always create a FRESH instance to ensure no old transcript history
+        if (speechRecognitionRef.current) {
+            // Safety cleanup of old instance
+            speechRecognitionRef.current.onend = null;
+            speechRecognitionRef.current.onerror = null;
+            speechRecognitionRef.current.onresult = null;
+            try { speechRecognitionRef.current.stop(); } catch (e) { }
         }
 
         const recognition = new SpeechRecognition();
@@ -23,17 +50,35 @@ export const useSpeechRecognition = ({ onResult }: UseSpeechRecognitionProps) =>
         recognition.lang = 'es-MX';
         recognition.maxAlternatives = 1;
 
-        recognition.onstart = () => setIsListening(true);
-        recognition.onend = () => setIsListening(false);
+        preListenInputRef.current = currentInput ? currentInput.trim() + ' ' : '';
+        shouldProcessResultRef.current = true; // Enable processing
+
+        recognition.onstart = () => {
+            // Confirm state (optimistic update might have already set it)
+            if (shouldProcessResultRef.current) {
+                setIsListening(true);
+            }
+        };
+
+        recognition.onend = () => {
+            // Only update state if we haven't manually stopped (natural end)
+            // or to ensure sync.
+            // If we manually stopped, isListening is already false.
+            if (shouldProcessResultRef.current) {
+                setIsListening(false);
+                shouldProcessResultRef.current = false;
+            }
+        };
+
         recognition.onerror = (event) => {
             console.error("Speech recognition error", event.error);
-            if (speechRecognitionRef.current) {
-                speechRecognitionRef.current.stop();
-            }
             setIsListening(false);
+            shouldProcessResultRef.current = false;
         };
 
         recognition.onresult = (event) => {
+            if (!shouldProcessResultRef.current) return;
+
             let finalTranscript = '';
             let interimTranscript = '';
 
@@ -45,34 +90,22 @@ export const useSpeechRecognition = ({ onResult }: UseSpeechRecognitionProps) =>
                 }
             }
 
-            // We pass the accumulated text back to the component
-            // Note: This logic assumes the component handles the "current input" state.
-            // In the original App.tsx, it appended to preListenInputRef.current.
-            // Here we return the NEW speech part. Handling accumulation might be better in the parent or here.
-            // To match App.tsx pattern:
+            // Combine previous input with NEW fresh transcript
             onResult(preListenInputRef.current + finalTranscript + interimTranscript);
         };
 
         speechRecognitionRef.current = recognition;
 
-        return () => {
-            if (speechRecognitionRef.current) {
-                speechRecognitionRef.current.stop();
-            }
+        // Optimistic update
+        setIsListening(true);
+        try {
+            recognition.start();
+        } catch (error) {
+            console.error("Error starting speech recognition:", error);
+            setIsListening(false);
+            shouldProcessResultRef.current = false;
         }
-    }, [onResult]);
-
-    const startListening = useCallback((currentInput: string) => {
-        audioService.unlockAudio(); // Unlock audio context if needed for feedback
-        audioService.cancel(); // Stop TTS when user wants to speak
-
-        preListenInputRef.current = currentInput ? currentInput.trim() + ' ' : '';
-        speechRecognitionRef.current?.start();
-    }, []);
-
-    const stopListening = useCallback(() => {
-        speechRecognitionRef.current?.stop();
-    }, []);
+    }, []); // Only rebuild if dependencies change (none here ideally)
 
     const toggleListening = useCallback((currentInput: string) => {
         if (isListening) {
@@ -81,6 +114,15 @@ export const useSpeechRecognition = ({ onResult }: UseSpeechRecognitionProps) =>
             startListening(currentInput);
         }
     }, [isListening, startListening, stopListening]);
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (speechRecognitionRef.current) {
+                speechRecognitionRef.current.stop();
+            }
+        };
+    }, []);
 
     return {
         isListening,
