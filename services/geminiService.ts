@@ -548,6 +548,7 @@ const generateSystemInstruction = (config: SimulationConfig, dynamicContext: str
           - Errores de espaciado: \`[TESTIGO] :\`
           - Errores de sintaxis: \`TESTIGO:\`, \`[TESTIGO]\`
       d. **CONSECUENCIA:** Fallar en usar la etiqueta EXACTA de la lista blanca romperá la aplicación. Tu adherencia a este formato es crítica. NO improvises ni alteres las etiquetas bajo ninguna circunstancia.
+  7.  **ROLES PROHIBIDOS:** NUNCA generes diálogo para \`[${userRole.toUpperCase()}]:\`. Este rol pertenece exclusivamente al usuario humano. Si generas contenido para este rol, la simulación fallará.
   
   Al finalizar el juicio, escribe: **FIN DE LA SIMULACIÓN**.
   

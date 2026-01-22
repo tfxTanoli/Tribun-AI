@@ -9,6 +9,7 @@ import { GavelIcon, ProsecutorIcon, UserIcon, WitnessIcon, MicrophoneIcon, Speak
 import ChatMessage from './components/ChatMessage';
 import EvaluationDisplay from './components/EvaluationDisplay';
 import SimulationSetup from './components/SimulationSetup';
+import { TurnManager } from './utils/turnManager';
 
 // FIX: Added complete type declarations for the Web Speech API to resolve 'Cannot find name SpeechRecognition' errors.
 // The previous declarations were incomplete and circular.
@@ -64,14 +65,12 @@ const App: React.FC = () => {
 
   const chatSessionRef = useRef<any | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  // Removed speechRecognitionRef, now in hook
   const speechSessionRef = useRef(0);
-  // preListenInputRef handled in hook/component interaction
-  // Removed voiceMapRef
   const prevIsLoadingRef = useRef<boolean>(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevTtsEnabledRef = useRef<boolean>(isTtsEnabled);
   const historyLengthBeforeLoadingRef = useRef<number>(0);
+  const turnManagerRef = useRef<TurnManager | null>(null);
 
   const handleSpeechResult = (text: string) => {
     setUserInput(text);
@@ -235,12 +234,14 @@ const App: React.FC = () => {
   };
 
   const handleStartSimulation = async (config: SimulationConfig) => {
-    unlockAudio(); // Unlock audio on initial button click
+    unlockAudio();
 
-    // Apply user-selected voice settings
     if (config.voiceSettings) {
       audioService.updateVoiceSettings(config.voiceSettings);
     }
+
+    // Initialize turn manager
+    turnManagerRef.current = new TurnManager(config.userRole);
 
     setSimulationConfig(config);
     setUserName(config.userName);
@@ -326,6 +327,7 @@ const App: React.FC = () => {
   const parseAIResponse = (text: string): ChatMessageType[] => {
     const messages: ChatMessageType[] = [];
     const parts = text.split(/(\[JUEZ\]:|\[MINISTERIO PÚBLICO\]:|\[DEFENSA\]:|\[TESTIGO\]:|\[SECRETARIO\]:)/g).filter(Boolean);
+    const turnManager = turnManagerRef.current;
 
     for (let i = 0; i < parts.length; i++) {
       const tag = parts[i].trim();
@@ -351,6 +353,12 @@ const App: React.FC = () => {
       else if (tag === '[SECRETARIO]:') speaker = Speaker.SECRETARIO;
 
       if (speaker) {
+        // Anti-impersonation guard
+        if (turnManager && !turnManager.validateAIMessage(speaker)) {
+          console.warn(`[App] Discarding AI message impersonating user: ${speaker}`);
+          i++;
+          continue;
+        }
         messages.push({ speaker, text: content, id: crypto.randomUUID() });
         i++;
       } else if (messages.length > 0) {
@@ -375,9 +383,6 @@ const App: React.FC = () => {
   const processAIStream = async (streamPromise: Promise<AsyncGenerator<GenerateContentResponse>>, isUserMessage: boolean = true) => {
     if (!chatSessionRef.current) return;
 
-    // FIX: Correctly set the history length for slicing TTS messages.
-    // This anticipates the pending state update of adding the user's message,
-    // preventing the user's input from being echoed by the TTS.
     historyLengthBeforeLoadingRef.current = isUserMessage ? chatHistory.length + 1 : chatHistory.length;
     setIsLoading(true);
     setCurrentTurn(null);
@@ -385,12 +390,10 @@ const App: React.FC = () => {
     const userMessageIndex = isUserMessage ? chatHistory.length : chatHistory.length - 1;
 
     try {
-      // TIMEOUT PROMISE
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error("Timeout waiting for AI response")), 30000)
       );
 
-      // Race against timeout
       const stream = await Promise.race([streamPromise, timeoutPromise]);
       let accumulatedText = '';
       let hasParsedContent = false;
@@ -418,15 +421,25 @@ const App: React.FC = () => {
         }
       }
 
-      // FALLBACK IF NO CONTENT PARSED
+      // FAIL-SAFE: Ensure content was parsed
       if (!hasParsedContent && accumulatedText.trim().length > 0) {
-        console.warn("AI responded but no tags found. Injecting fallback.");
-        // If we have text but no tags, assume it's the Juez speaking as fail-safe
+        console.warn("[App] AI responded but no tags found. Injecting fallback.");
         const fallbackMessage = { speaker: Speaker.JUEZ, text: accumulatedText, id: crypto.randomUUID() };
         setChatHistory(prev => {
           const baseHistory = prev.slice(0, userMessageIndex + 1);
           return [...baseHistory, fallbackMessage];
         });
+        hasParsedContent = true;
+      }
+
+      // FAIL-SAFE: If still no content, inject error message
+      if (!hasParsedContent) {
+        console.error("[App] AI response was empty or unparseable");
+        setChatHistory(prev => [...prev, { 
+          speaker: Speaker.JUEZ, 
+          text: "[Error del sistema: La IA no generó una respuesta válida. Por favor, reformule su intervención.]", 
+          id: crypto.randomUUID() 
+        }]);
       }
 
       if (accumulatedText.includes('[PAUSA_PARA_OBJECION]')) {
@@ -441,23 +454,27 @@ const App: React.FC = () => {
           return;
         }
 
-        // TURN FALLBACK
-        if (!nextTurn && !hasParsedContent) {
-          // If we parsed nothing and have no turn, force turn to user to unblock
+        // TURN RESOLUTION: Always resolve to a valid turn
+        if (!nextTurn) {
+          console.warn("[App] No turn marker found, defaulting to user");
           setCurrentTurn(simulationConfig?.userRole || Speaker.DEFENSA);
-        } else {
+        } else if (turnManagerRef.current?.isUserSpeaker(nextTurn)) {
           setCurrentTurn(nextTurn);
+        } else if (turnManagerRef.current?.isAISpeaker(nextTurn)) {
+          setCurrentTurn(nextTurn);
+        } else {
+          console.warn(`[App] Invalid turn ${nextTurn}, defaulting to user`);
+          setCurrentTurn(simulationConfig?.userRole || Speaker.DEFENSA);
         }
       }
 
     } catch (error) {
-      console.error("Error en el stream de la IA:", error);
+      console.error("[App] Error in AI stream:", error);
       let errorMsg = "Ocurrió un error al procesar la respuesta.";
       if (error instanceof Error && error.message.includes("Timeout")) {
         errorMsg = "La IA tardó demasiado en responder. Intenta enviar tu mensaje nuevamente.";
       }
       setChatHistory(prev => [...prev, { speaker: Speaker.JUEZ, text: errorMsg, id: crypto.randomUUID() }]);
-      // Force turn back to user so they can retry
       setCurrentTurn(simulationConfig?.userRole || Speaker.DEFENSA);
     } finally {
       setIsLoading(false);
