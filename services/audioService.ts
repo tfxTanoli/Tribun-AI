@@ -40,11 +40,13 @@ export class AudioService {
     private queue: AudioQueueItem[] = [];
     private isPlaying: boolean = false;
     private isPaused: boolean = false;
+    private isMuted: boolean = false; // FIX: Added mute state - preserves queue but silences output
     private currentAudio: HTMLAudioElement | null = null;
     private audioContext: AudioContext | null = null;
     private apiKey: string;
     private isProcessingQueue: boolean = false;
     private nextAudioPreloading: boolean = false;
+    private isAudioUnlocked: boolean = false; // FIX: Track if user has interacted for mobile autoplay
 
     // Queue completion tracking
     private totalQueuedDialogues: number = 0;
@@ -56,6 +58,9 @@ export class AudioService {
     // Active message tracking
     private currentMessageId: string | null = null;
     private messageIdListeners: Array<(id: string | null) => void> = [];
+
+    // FIX: Added playing state listeners for UI synchronization
+    private playingStateListeners: Array<(isPlaying: boolean) => void> = [];
 
     // Store resolve function to unblock queue on cancel
     private currentPlaybackResolver: (() => void) | null = null;
@@ -548,15 +553,20 @@ export class AudioService {
 
     /**
      * Plays audio from URL and returns a promise that resolves when finished.
+     * FIX: Sets volume based on mute state - allows queue to continue silently when muted.
      */
     private playAudio(audioUrl: string): Promise<void> {
         return new Promise((resolve) => {
             this.currentPlaybackResolver = resolve;
             this.currentAudio = new Audio(audioUrl);
-            this.isPlaying = true;
+
+            // FIX: Apply mute state as volume (0 = muted, 1 = unmuted)
+            this.currentAudio.volume = this.isMuted ? 0 : 1;
+
+            this.setPlayingState(true);
 
             const cleanup = () => {
-                this.isPlaying = false;
+                this.setPlayingState(false);
                 this.currentAudio = null;
                 this.currentPlaybackResolver = null;
                 resolve();
@@ -648,8 +658,10 @@ export class AudioService {
 
     /**
      * Unlocks audio context on user interaction (iOS/Android requirement).
+     * FIX: Also marks audio as unlocked for mobile autoplay tracking.
      */
     public unlockAudio(): void {
+        this.isAudioUnlocked = true;
         if (this.audioContext && this.audioContext.state === 'suspended') {
             this.audioContext.resume().then(() => {
                 console.log('[AudioService] Audio context unlocked');
@@ -657,6 +669,14 @@ export class AudioService {
                 console.error('[AudioService] Failed to unlock audio context:', error);
             });
         }
+    }
+
+    /**
+     * Checks if audio has been unlocked via user interaction.
+     * FIX: Allows UI to show "tap to enable audio" prompt on mobile.
+     */
+    public getIsAudioUnlocked(): boolean {
+        return this.isAudioUnlocked;
     }
 
     /**
@@ -671,6 +691,78 @@ export class AudioService {
      */
     public getIsPaused(): boolean {
         return this.isPaused;
+    }
+
+    /**
+     * Gets current muted state.
+     * FIX: New API for mute state.
+     */
+    public getIsMuted(): boolean {
+        return this.isMuted;
+    }
+
+    /**
+     * Sets muted state - muting preserves audio position and queue, just silences output.
+     * FIX: Proper mute implementation that doesn't cancel the queue.
+     */
+    public setMuted(muted: boolean): void {
+        this.isMuted = muted;
+        if (this.currentAudio) {
+            // Apply volume change immediately to current audio
+            this.currentAudio.volume = muted ? 0 : 1;
+        }
+        console.log(`[AudioService] Muted: ${muted}`);
+    }
+
+    /**
+     * Skips only the current audio item and advances to the next in queue.
+     * FIX: Unlike cancel(), this preserves the queue and only skips current.
+     */
+    public skipCurrent(): void {
+        if (this.currentAudio) {
+            // Stop current audio - this will trigger onended -> cleanup -> resolve
+            // which advances the queue naturally
+            this.currentAudio.pause();
+            this.currentAudio.currentTime = 0;
+
+            // Force resolve to unblock and move to next item
+            if (this.currentPlaybackResolver) {
+                this.currentPlaybackResolver();
+                this.currentPlaybackResolver = null;
+            }
+            console.log('[AudioService] Skipped current audio, advancing to next');
+        }
+    }
+
+    /**
+     * Helper to update isPlaying state and notify listeners.
+     * FIX: Centralized state change with notifications.
+     */
+    private setPlayingState(playing: boolean): void {
+        this.isPlaying = playing;
+        this.notifyPlayingStateChange();
+    }
+
+    /**
+     * Subscribe to playing state changes.
+     * FIX: Allows App.tsx to sync isSpeaking state with actual audio playback.
+     */
+    public onPlayingStateChange(callback: (isPlaying: boolean) => void): () => void {
+        this.playingStateListeners.push(callback);
+        // Invoke immediately with current state
+        callback(this.isPlaying);
+
+        // Return unsubscribe function
+        return () => {
+            this.playingStateListeners = this.playingStateListeners.filter(cb => cb !== callback);
+        };
+    }
+
+    /**
+     * Notifies all listeners of playing state change.
+     */
+    private notifyPlayingStateChange(): void {
+        this.playingStateListeners.forEach(callback => callback(this.isPlaying));
     }
 }
 

@@ -9,7 +9,7 @@ import { GavelIcon, ProsecutorIcon, UserIcon, WitnessIcon, MicrophoneIcon, Speak
 import ChatMessage from './components/ChatMessage';
 import EvaluationDisplay from './components/EvaluationDisplay';
 import SimulationSetup from './components/SimulationSetup';
-import { TurnManager } from './utils/turnManager';
+import { TurnManager, TurnState } from './utils/turnManager';
 
 // FIX: Added complete type declarations for the Web Speech API to resolve 'Cannot find name SpeechRecognition' errors.
 // The previous declarations were incomplete and circular.
@@ -48,9 +48,9 @@ const App: React.FC = () => {
   const [currentTurn, setCurrentTurn] = useState<Speaker | null>(null);
   // Removed old isListening state, now using hook
   const [isTtsEnabled, setIsTtsEnabled] = useState<boolean>(true);
-  // Removed voices state
-  const [isSpeaking, setIsSpeaking] = useState<boolean>(false); // Kept for UI compatibility, always false for now
-  const [isSpeechPaused, setIsSpeechPaused] = useState<boolean>(false); // Kept for UI compatibility
+  // FIX: isSpeaking now synced with AudioService via onPlayingStateChange listener
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+  const [isSpeechPaused, setIsSpeechPaused] = useState<boolean>(false);
   const [currentStageName, setCurrentStageName] = useState<string>('');
   const [isWaitingForAudio, setIsWaitingForAudio] = useState<boolean>(false);
 
@@ -156,26 +156,10 @@ const App: React.FC = () => {
     prevIsLoadingRef.current = isLoading;
   }, [isLoading, chatHistory, simulationState, speakMessagesSequentially]);
 
-  useEffect(() => {
-    // This effect handles re-starting speech when the user unmutes mid-turn.
-    // It detects the transition of isTtsEnabled from false to true.
-    if (isTtsEnabled && prevTtsEnabledRef.current === false) {
-      // Check if it's an appropriate time to replay audio (simulation started, not loading).
-      if ((simulationState === SimulationState.STARTED || simulationState === SimulationState.ENDED) && !isLoading && chatHistory.length > 0) {
-        // FIX: Explicitly type `msg` to resolve type inference issue with the custom `findLastIndex` function.
-        const lastUserMessageIndex = findLastIndex(chatHistory, (msg: ChatMessageType) => msg.speaker === simulationConfig?.userRole);
-        const messagesToReplay = chatHistory.slice(lastUserMessageIndex + 1);
-
-        if (messagesToReplay.length > 0) {
-          // Replay the last turn's messages from the beginning.
-          speakMessagesSequentially(messagesToReplay);
-        }
-      }
-    }
-
-    // Update the ref with the current value for the next render cycle.
-    prevTtsEnabledRef.current = isTtsEnabled;
-  }, [isTtsEnabled, simulationState, isLoading, chatHistory, simulationConfig, speakMessagesSequentially]);
+  // FIX: Removed the old "unmute replay" effect.
+  // With volume-based muting (setMuted), audio position is preserved.
+  // When unmuting, volume is simply restored via audioService.setMuted(false).
+  // No need to replay from beginning - queue continues where it was.
 
 
 
@@ -183,6 +167,15 @@ const App: React.FC = () => {
   useEffect(() => {
     const unsubscribe = audioService.onCurrentMessageIdChange((id) => {
       setActiveMessageId(id);
+    });
+    return unsubscribe;
+  }, []);
+
+  // FIX: Subscribe to AudioService playing state for UI synchronization
+  // This is the SINGLE SOURCE OF TRUTH for isSpeaking state
+  useEffect(() => {
+    const unsubscribe = audioService.onPlayingStateChange((playing) => {
+      setIsSpeaking(playing);
     });
     return unsubscribe;
   }, []);
@@ -435,10 +428,10 @@ const App: React.FC = () => {
       // FAIL-SAFE: If still no content, inject error message
       if (!hasParsedContent) {
         console.error("[App] AI response was empty or unparseable");
-        setChatHistory(prev => [...prev, { 
-          speaker: Speaker.JUEZ, 
-          text: "[Error del sistema: La IA no generó una respuesta válida. Por favor, reformule su intervención.]", 
-          id: crypto.randomUUID() 
+        setChatHistory(prev => [...prev, {
+          speaker: Speaker.JUEZ,
+          text: "[Error del sistema: La IA no generó una respuesta válida. Por favor, reformule su intervención.]",
+          id: crypto.randomUUID()
         }]);
       }
 
@@ -647,12 +640,12 @@ const App: React.FC = () => {
     }
   };
 
+  // FIX: Mute now uses AudioService.setMuted() to preserve queue and position
+  // Instead of cancelling all audio, we just silence the output
   const handleMuteToggle = () => {
     setIsTtsEnabled(prev => {
       const newState = !prev;
-      if (!newState) { // If muting
-        stopSpeech();
-      }
+      audioService.setMuted(!newState); // muted = !ttsEnabled
       return newState;
     });
   };
@@ -667,6 +660,22 @@ const App: React.FC = () => {
       setIsSpeechPaused(true);
     }
   };
+
+  // FIX: Skip only the current audio, don't cancel entire queue
+  const handleSkipCurrent = () => {
+    audioService.skipCurrent();
+  };
+
+  // FIX: Compute unified turn state for input control
+  // This is the SINGLE SOURCE OF TRUTH for whether user can interact
+  const computedTurnState = turnManagerRef.current?.computeTurnState(
+    currentTurn,
+    isLoading,
+    isSpeaking,
+    isObjectionPhase
+  ) || TurnState.AI_TURN;
+
+  const canUserInteract = computedTurnState === TurnState.USER_TURN;
 
   const renderContent = () => {
     switch (simulationState) {
@@ -726,7 +735,7 @@ const App: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={stopSpeech}
+                      onClick={handleSkipCurrent}
                       className="p-2 sm:p-3 rounded-lg transition-colors bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                       disabled={!isSpeaking}
                       aria-label="Omitir audio actual"
@@ -858,7 +867,7 @@ const App: React.FC = () => {
                               {isSpeechPaused ? <PlayIcon className="w-5 h-5" /> : <PauseIcon className="w-5 h-5" />}
                             </button>
                             <button
-                              onClick={stopSpeech}
+                              onClick={handleSkipCurrent}
                               disabled={!isSpeaking}
                               className="p-2 rounded-md hover:bg-slate-200 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed"
                               aria-label="Omitir audio actual"
@@ -871,7 +880,7 @@ const App: React.FC = () => {
                           <div className="flex items-center gap-2">
                             <button
                               onClick={handleListen}
-                              disabled={isLoading || currentTurn !== simulationConfig?.userRole}
+                              disabled={!canUserInteract}
                               className={`p-2 rounded-md transition-colors ${isListening ? 'bg-rose-600 text-white animate-pulse' : 'bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed'}`}
                               aria-label={isListening ? 'Detener dictado' : 'Iniciar dictado'}
                             >
@@ -879,7 +888,7 @@ const App: React.FC = () => {
                             </button>
                             <button
                               onClick={submitMessage}
-                              disabled={isLoading || currentTurn !== simulationConfig?.userRole}
+                              disabled={!canUserInteract}
                               className="bg-[#00afc7] text-white text-sm font-bold py-2 px-4 rounded-md hover:bg-[#009ab0] transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed shadow-sm"
                             >
                               Enviar
@@ -889,7 +898,7 @@ const App: React.FC = () => {
 
                         {/* MAIN INPUT CONTAINER (Shared Textarea, Desktop Buttons) */}
                         <div className="flex flex-col sm:flex-row items-end gap-2 w-full">
-                          {(currentTurn === simulationConfig?.userRole || !isLoading) ? (
+                          {canUserInteract ? (
                             <textarea
                               ref={textareaRef}
                               rows={1}
@@ -898,11 +907,11 @@ const App: React.FC = () => {
                               onKeyDown={handleTextareaKeyDown}
                               placeholder="Escriba su argumento..."
                               className={`w-full sm:flex-1 p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#00afc7] focus:outline-none transition-shadow bg-white text-base sm:text-sm text-slate-800 placeholder-slate-500 resize-none overflow-y-auto max-h-40 shadow-inner`}
-                              disabled={isLoading}
+                              disabled={!canUserInteract}
                             />
                           ) : (
                             <div className="w-full sm:flex-1 p-3 border border-slate-200 rounded-lg bg-slate-50 text-slate-500 text-sm text-center italic animate-pulse">
-                              Turno de: {currentTurn || '...'} (Procesando...)
+                              {isLoading ? 'Procesando...' : isSpeaking ? `Escuchando a: ${currentTurn || 'IA'}` : `Turno de: ${currentTurn || '...'}`}
                             </div>
                           )}
 
@@ -910,7 +919,7 @@ const App: React.FC = () => {
                           <div className="hidden sm:flex items-center gap-2">
                             <button
                               onClick={handleListen}
-                              disabled={isLoading || currentTurn !== simulationConfig?.userRole}
+                              disabled={!canUserInteract}
                               className={`p-3 rounded-lg transition-colors flex-shrink-0 ${isListening ? 'bg-rose-600 text-white animate-pulse' : 'bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed'}`}
                               aria-label={isListening ? 'Detener dictado' : 'Iniciar dictado'}
                             >
@@ -918,7 +927,7 @@ const App: React.FC = () => {
                             </button>
                             <button
                               onClick={submitMessage}
-                              disabled={isLoading || currentTurn !== simulationConfig?.userRole}
+                              disabled={!canUserInteract}
                               className="bg-[#00afc7] text-white font-bold py-3 px-6 rounded-lg hover:bg-[#009ab0] transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed shadow-sm"
                             >
                               Enviar
