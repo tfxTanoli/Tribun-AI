@@ -533,7 +533,9 @@ const generateSystemInstruction = (config: SimulationConfig, dynamicContext: str
   3.  **MARCADOR DE TURNO:** Salvo en la mecánica de objeciones, cada vez que el Juez o la contraparte terminen de hablar y sea el momento de que el usuario intervenga, DEBES terminar tu respuesta INMEDIATamente con la etiqueta: \`[TURNO: ${userRole}]\`.
   4.  **ALTO TOTAL:** La generación de texto por tu parte debe cesar exactamente después de la etiqueta de turno. No añadas notas, no añadas pensamientos, no añadas el tag del usuario.
   5.  **MARCADOR DE ETAPA (OBLIGATORIO):** Cuando inicies una nueva fase procesal o sub-etapa definida en la estructura, inserta la etiqueta \`[ETAPA: NOMBRE_DE_ETAPA]\` al inicio de tu intervención.
-  6.  **FORMATO DE DIÁLOGO (REGLA INQUEBRANTABLE Y NO NEGOCIABLE):**
+  6.  **ENCADENAMIENTO DE ROLES (CRÍTICO):** Tú controlas a TODOS los actores menos al usuario. Si el Juez le da la palabra al Ministerio Público, y el usuario es la Defensa, **NO TE DETENGAS**. Genera inmediatamente el diálogo del Ministerio Público.
+      - **REGLA:** Solo detén la generación y cloca \`[TURNO: ...]\` cuando le toque hablar AL USUARIO (${roles[userRole]}). Si le toca a otro personaje de la IA, SIGUE ESCRIBIENDO.
+  7.  **FORMATO DE DIÁLOGO (REGLA INQUEBRANTABLE Y NO NEGOCIABLE):**
       a. CADA intervención de un personaje de la IA DEBE comenzar con su etiqueta de rol EXACTA, en mayúsculas, dentro de corchetes, y seguida de dos puntos sin espacios intermedios. La fidelidad al texto de la etiqueta es absoluta.
       b. **LISTA BLANCA DE ETIQUETAS (ÚNICAS PERMITIDAS):**
           - \`[JUEZ]:\`

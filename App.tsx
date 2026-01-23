@@ -180,6 +180,18 @@ const App: React.FC = () => {
     return unsubscribe;
   }, []);
 
+  // AUTO-ADVANCE AI TURN
+  // Logic: If it's AI's turn (e.g. Juez -> MP), we must trigger generation automatically.
+  useEffect(() => {
+    if (simulationState === SimulationState.STARTED && !isLoading && currentTurn && turnManagerRef.current?.isAISpeaker(currentTurn)) {
+      const timer = setTimeout(() => {
+        console.log(`[App] Auto-advancing AI turn for ${currentTurn}`);
+        sendSystemMessage("");
+      }, 500); // Small natural pause
+      return () => clearTimeout(timer);
+    }
+  }, [currentTurn, isLoading, simulationState]);
+
   const handleListen = () => {
     // unlockAudio(); // Triggered inside toggleListening if needed logic is there, but App.tsx used to invoke it explicitly.
     // AudioService.unlockAudio() call can remain here if we want to ensure it, 
