@@ -40,13 +40,18 @@ export class AudioService {
     private queue: AudioQueueItem[] = [];
     private isPlaying: boolean = false;
     private isPaused: boolean = false;
-    private isMuted: boolean = false; // FIX: Added mute state - preserves queue but silences output
+    private isMuted: boolean = false;
     private currentAudio: HTMLAudioElement | null = null;
     private audioContext: AudioContext | null = null;
+    private silentAudio: HTMLAudioElement | null = null; // For mobile wake-up
     private apiKey: string;
     private isProcessingQueue: boolean = false;
     private nextAudioPreloading: boolean = false;
     private isAudioUnlocked: boolean = false; // FIX: Track if user has interacted for mobile autoplay
+
+    // Replay Logic
+    private replayBuffer: AudioQueueItem[] = [];
+    private maxReplaySize: number = 5; // Keep last 5 items for context if needed, though we usually replay just the turn
 
     // Queue completion tracking
     private totalQueuedDialogues: number = 0;
@@ -133,6 +138,17 @@ export class AudioService {
         try {
             const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
             this.audioContext = new AudioContextClass();
+
+            // Listen for state changes (e.g., auto-suspension on mobile)
+            this.audioContext.onstatechange = () => {
+                console.log(`[AudioService] AudioContext state changed to: ${this.audioContext?.state}`);
+                this.notifyPlayingStateChange();
+            };
+
+            // Pre-create a silent audio element for gesture unlocking
+            this.silentAudio = new Audio();
+            this.silentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAgZGF0YQQAAAAAAA==';
+
         } catch (error) {
             console.error('[AudioService] Failed to create AudioContext:', error);
         }
@@ -237,6 +253,7 @@ export class AudioService {
         this.failedDialogues = 0;
         this.queueCompletionCallbacks = [];
         this.currentMessageId = null;
+        this.clearReplayBuffer(); // Clear history on new simulation
         this.notifyMessageIdChange();
         this.isQueueActive = false;
         console.log('[AudioService] Queue counters reset');
@@ -468,6 +485,54 @@ export class AudioService {
     }
 
     /**
+     * Adds an item to the replay buffer.
+     */
+    private addToReplayBuffer(item: AudioQueueItem): void {
+        this.replayBuffer.push(item);
+        if (this.replayBuffer.length > this.maxReplaySize) {
+            this.replayBuffer.shift();
+        }
+    }
+
+    /**
+     * Replays the audio from the last turn.
+     * Effectively re-queues the items in the replay buffer.
+     */
+    public replayLastTurn(): void {
+        if (this.replayBuffer.length === 0) return;
+
+        console.log('[AudioService] Replaying last turn...');
+
+        // Stop current if playing
+        this.cancel();
+
+        // Re-queue items from buffer
+        // usage: we want to replay the "current effective turn". 
+        // For simplicity in this iteration: replay the LAST item or the buffer.
+        // User asked: "repeat button replays only the current AI turn’s audio"
+        // We will replay the ENTIRE buffer which represents the recent history.
+        // Ideally we should clear buffer on User Input to define "Turn".
+
+        this.replayBuffer.forEach(item => {
+            // Create new generic ID to avoid collision if any logic depends on unique IDs
+            // but keep messageId link
+            const newItem = { ...item, id: crypto.randomUUID() };
+            this.queue.push(newItem);
+            this.totalQueuedDialogues++;
+        });
+
+        this.isQueueActive = true;
+        this.processQueue();
+    }
+
+    /**
+     * Clears the replay buffer. Call this when User turn starts.
+     */
+    public clearReplayBuffer(): void {
+        this.replayBuffer = [];
+    }
+
+    /**
      * Processes the audio queue sequentially with optimized preloading.
      */
     private async processQueue(): Promise<void> {
@@ -503,6 +568,11 @@ export class AudioService {
             // Play current audio
             this.currentMessageId = currentItem.messageId || null;
             this.notifyMessageIdChange();
+
+            this.notifyMessageIdChange();
+
+            // Add to replay buffer before playing
+            this.addToReplayBuffer(currentItem);
 
             await this.playAudio(currentItem.audioUrl);
 
@@ -660,13 +730,31 @@ export class AudioService {
      * Unlocks audio context on user interaction (iOS/Android requirement).
      * FIX: Also marks audio as unlocked for mobile autoplay tracking.
      */
+    /**
+     * Unlocks audio context on user interaction (iOS/Android requirement).
+     * Now plays a silent sound to bless the Audio element path too.
+     */
     public unlockAudio(): void {
         this.isAudioUnlocked = true;
+
+        // 1. Resume AudioContext
         if (this.audioContext && this.audioContext.state === 'suspended') {
             this.audioContext.resume().then(() => {
                 console.log('[AudioService] Audio context unlocked');
             }).catch(error => {
                 console.error('[AudioService] Failed to unlock audio context:', error);
+            });
+        }
+
+        // 2. Play silent audio to unlock HTML5 Audio limitations on iOS
+        if (this.silentAudio) {
+            this.silentAudio.play().then(() => {
+                console.log('[AudioService] Silent audio played (Media Unlocked)');
+            }).catch(e => {
+                // Ignore abort errors or auto-play errors here, we just try
+                if (e.name !== 'AbortError') {
+                    console.log('[AudioService] Silent audio play attempt:', e.message);
+                }
             });
         }
     }
@@ -677,6 +765,13 @@ export class AudioService {
      */
     public getIsAudioUnlocked(): boolean {
         return this.isAudioUnlocked;
+    }
+
+    /**
+     * Checks if AudioContext is suspended (mobile browser blocking).
+     */
+    public isAudioContextSuspended(): boolean {
+        return this.audioContext?.state === 'suspended';
     }
 
     /**

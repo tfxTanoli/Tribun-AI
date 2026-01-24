@@ -5,7 +5,7 @@ import { ChatMessage as ChatMessageType, Evaluation, SimulationState, Speaker, S
 import { startChatSession, continueChat, getEvaluation, generateDynamicContext } from './services/geminiService';
 import { audioService } from './services/audioService';
 import { useSpeechRecognition } from './hooks/useSpeechRecognition';
-import { GavelIcon, ProsecutorIcon, UserIcon, WitnessIcon, MicrophoneIcon, SpeakerOnIcon, SpeakerOffIcon, SkipIcon, PauseIcon, PlayIcon } from './components/icons';
+import { GavelIcon, ProsecutorIcon, UserIcon, WitnessIcon, MicrophoneIcon, SpeakerOnIcon, SpeakerOffIcon, SkipIcon, PauseIcon, PlayIcon, ReplayIcon } from './components/icons';
 import ChatMessage from './components/ChatMessage';
 import EvaluationDisplay from './components/EvaluationDisplay';
 import SimulationSetup from './components/SimulationSetup';
@@ -53,9 +53,9 @@ const App: React.FC = () => {
   const [isSpeechPaused, setIsSpeechPaused] = useState<boolean>(false);
   const [currentStageName, setCurrentStageName] = useState<string>('');
   const [isWaitingForAudio, setIsWaitingForAudio] = useState<boolean>(false);
+  const [isAudioSuspended, setIsAudioSuspended] = useState<boolean>(false);
 
   // State for objection flow
-  // const isObjectionPhase = simulationState === SimulationState.STARTED && currentTurn === null && chatHistory.length > 0 && chatHistory[chatHistory.length - 1].text.includes('[PAUSA_PARA_OBJECION]'); // Derived state would be better but keeping existing pattern
   const [isObjectionPhase, setIsObjectionPhase] = useState<boolean>(false); // Replaced with logic or keep existing
   // Keeping existing state variables as they are used elsewhere
   const [showObjectionOptions, setShowObjectionOptions] = useState<boolean>(false);
@@ -176,9 +176,20 @@ const App: React.FC = () => {
   useEffect(() => {
     const unsubscribe = audioService.onPlayingStateChange((playing) => {
       setIsSpeaking(playing);
+      // Also check suspension state whenever playing state changes
+      setIsAudioSuspended(audioService.isAudioContextSuspended());
     });
     return unsubscribe;
   }, []);
+
+  // Poll for audio suspension state (for mobile auto-lock detection)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsAudioSuspended(audioService.isAudioContextSuspended());
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
 
   // AUTO-ADVANCE AI TURN
   // Logic: If it's AI's turn (e.g. Juez -> MP), we must trigger generation automatically.
@@ -396,7 +407,7 @@ const App: React.FC = () => {
 
     try {
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout waiting for AI response")), 30000)
+        setTimeout(() => reject(new Error("Timeout waiting for AI response")), 45000)
       );
 
       const stream = await Promise.race([streamPromise, timeoutPromise]);
@@ -476,11 +487,16 @@ const App: React.FC = () => {
     } catch (error) {
       console.error("[App] Error in AI stream:", error);
       let errorMsg = "Ocurrió un error al procesar la respuesta.";
+
       if (error instanceof Error && error.message.includes("Timeout")) {
-        errorMsg = "La IA tardó demasiado en responder. Intenta enviar tu mensaje nuevamente.";
+        errorMsg = "La IA está tomando más tiempo de lo esperado. Por favor, intenta de nuevo o espera un momento.";
       }
+
       setChatHistory(prev => [...prev, { speaker: Speaker.JUEZ, text: errorMsg, id: crypto.randomUUID() }]);
+
+      // CRITICAL FIX: Unlock user turn on error so app doesn't freeze
       setCurrentTurn(simulationConfig?.userRole || Speaker.DEFENSA);
+
     } finally {
       setIsLoading(false);
     }
@@ -501,6 +517,7 @@ const App: React.FC = () => {
     if (!trimmedInput) return;
 
     stopSpeech();
+    audioService.clearReplayBuffer(); // FIX: Clear replay buffer on new user turn so replay button works correctly for next AI turn
 
     // CHECK FOR META-PROCEDURAL QUESTION (PROFESSOR MODE)
     // Pattern: Starts with [ and ends with ]
@@ -678,6 +695,16 @@ const App: React.FC = () => {
     audioService.skipCurrent();
   };
 
+  const handleReplayClick = () => {
+    // FIX: Replay only the buffer of the last turn
+    audioService.replayLastTurn();
+  };
+
+  const handleResumeAudioContext = () => {
+    audioService.unlockAudio();
+    setIsAudioSuspended(false);
+  };
+
   // FIX: Compute unified turn state for input control
   // This is the SINGLE SOURCE OF TRUTH for whether user can interact
   const computedTurnState = turnManagerRef.current?.computeTurnState(
@@ -723,11 +750,23 @@ const App: React.FC = () => {
                 </h2>
               </div>
 
+              {/* ALERT: Audio Suspended (Visible on Mobile & Desktop) */}
+              {isAudioSuspended && (
+                <button
+                  onClick={handleResumeAudioContext}
+                  className="absolute top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-red-500 text-white text-xs font-bold rounded-full shadow-lg animate-bounce flex items-center gap-2"
+                >
+                  <span>🔇</span> Toca para activar audio
+                </button>
+              )}
+
               <div className="flex-0 sm:flex-1 flex justify-end">
                 {/* DESKTOP ONLY: Audio Controls in Header */}
                 <div className="hidden sm:flex flex-col items-center">
                   <span className="text-xs font-semibold text-slate-500 mb-1">Controles de audio</span>
                   <div className="flex items-center gap-2">
+                    {/* Button moved to main header area for mobile visibility */}
+
                     <button
                       type="button"
                       onClick={handleMuteToggle}
@@ -735,6 +774,15 @@ const App: React.FC = () => {
                       aria-label={isTtsEnabled ? 'Silenciar' : 'Activar voz'}
                     >
                       {isTtsEnabled ? <SpeakerOnIcon className="w-5 h-5" /> : <SpeakerOffIcon className="w-5 h-5" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleReplayClick}
+                      className="p-2 sm:p-3 rounded-lg transition-colors bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                      disabled={isSpeaking}
+                      title="Repetir último turno"
+                    >
+                      <ReplayIcon className="w-5 h-5" />
                     </button>
                     <button
                       type="button"
