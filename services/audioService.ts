@@ -797,6 +797,24 @@ export class AudioService {
     }
 
     /**
+     * Checks if there are more items in the queue (excluding current playing item).
+     * FIX: Allows UI to disable skip/play buttons when on the last dialog.
+     */
+    public hasMoreInQueue(): boolean {
+        // If queue length > 1, there's more after current
+        // If queue length === 1, we're on the last item
+        // If queue length === 0, nothing in queue
+        return this.queue.length > 1;
+    }
+
+    /**
+     * Gets the current queue length.
+     */
+    public getQueueLength(): number {
+        return this.queue.length;
+    }
+
+    /**
      * Sets muted state - muting preserves audio position and queue, just silences output.
      * FIX: Proper mute implementation that doesn't cancel the queue.
      */
@@ -812,6 +830,7 @@ export class AudioService {
     /**
      * Skips only the current audio item and advances to the next in queue.
      * FIX: Unlike cancel(), this preserves the queue and only skips current.
+     * FIX: Immediately sets playing state to false when skipping the last item.
      */
     public skipCurrent(): void {
         if (this.currentAudio) {
@@ -825,7 +844,15 @@ export class AudioService {
                 this.currentPlaybackResolver();
                 this.currentPlaybackResolver = null;
             }
-            console.log('[AudioService] Skipped current audio, advancing to next');
+
+            // FIX: If this is the last item in queue, immediately notify that playback stopped
+            // This ensures UI buttons are disabled immediately when skipping the last dialog
+            if (this.queue.length <= 1) {
+                console.log('[AudioService] Skipped last audio item, stopping playback');
+                this.setPlayingState(false);
+            } else {
+                console.log('[AudioService] Skipped current audio, advancing to next');
+            }
         }
     }
 

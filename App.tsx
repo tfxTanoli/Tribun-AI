@@ -54,6 +54,7 @@ const App: React.FC = () => {
   const [currentStageName, setCurrentStageName] = useState<string>('');
   const [isWaitingForAudio, setIsWaitingForAudio] = useState<boolean>(false);
   const [isAudioSuspended, setIsAudioSuspended] = useState<boolean>(false);
+  const [hasMoreAudio, setHasMoreAudio] = useState<boolean>(false);
 
   // State for objection flow
   const [isObjectionPhase, setIsObjectionPhase] = useState<boolean>(false); // Replaced with logic or keep existing
@@ -178,6 +179,8 @@ const App: React.FC = () => {
       setIsSpeaking(playing);
       // Also check suspension state whenever playing state changes
       setIsAudioSuspended(audioService.isAudioContextSuspended());
+      // FIX: Track if there are more audio items after current
+      setHasMoreAudio(audioService.hasMoreInQueue());
     });
     return unsubscribe;
   }, []);
@@ -774,15 +777,6 @@ const App: React.FC = () => {
                       aria-label={isTtsEnabled ? 'Silenciar' : 'Activar voz'}
                     >
                       {isTtsEnabled ? <SpeakerOnIcon className="w-5 h-5" /> : <SpeakerOffIcon className="w-5 h-5" />}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleReplayClick}
-                      className="p-2 sm:p-3 rounded-lg transition-colors bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                      disabled={isSpeaking}
-                      title="Repetir último turno"
-                    >
-                      <ReplayIcon className="w-5 h-5" />
                     </button>
                     <button
                       type="button"
