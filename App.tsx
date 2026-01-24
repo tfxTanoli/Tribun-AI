@@ -345,54 +345,49 @@ const App: React.FC = () => {
 
   const parseAIResponse = (text: string): ChatMessageType[] => {
     const messages: ChatMessageType[] = [];
-    const parts = text.split(/(\[JUEZ\]:|\[MINISTERIO PÚBLICO\]:|\[DEFENSA\]:|\[TESTIGO\]:|\[SECRETARIO\]:)/g).filter(Boolean);
+    // Robust regex: case insensitive, handles accents (público/publico), optional spaces
+    const taglineRegex = /(\[(?:JUEZ|MINISTERIO P[ÚU]BLICO|DEFENSA|TESTIGO|SECRETARIO)\]\s*:)/gi;
+
+    // Split and keep delimiters
+    const parts = text.split(taglineRegex);
     const turnManager = turnManagerRef.current;
 
-    for (let i = 0; i < parts.length; i++) {
-      const tag = parts[i].trim();
-      const content = parts[i + 1]?.trim();
-      if (!content && (tag === '[JUEZ]:' || tag === '[MINISTERIO PÚBLICO]:' || tag === '[DEFENSA]:' || tag === '[TESTIGO]:' || tag === '[SECRETARIO]:')) {
-        let speaker: Speaker;
-        if (tag === '[JUEZ]:') speaker = Speaker.JUEZ;
-        else if (tag === '[MINISTERIO PÚBLICO]:') speaker = Speaker.MINISTERIO_PUBLICO;
-        else if (tag === '[DEFENSA]:') speaker = Speaker.DEFENSA;
-        else if (tag === '[SECRETARIO]:') speaker = Speaker.SECRETARIO;
-        else speaker = Speaker.TESTIGO;
-        messages.push({ speaker, text: '', id: crypto.randomUUID() });
-        i++;
-        continue;
-      };
-      if (!content) continue;
+    let currentSpeaker: Speaker | undefined = undefined;
 
-      let speaker: Speaker | undefined;
-      if (tag === '[JUEZ]:') speaker = Speaker.JUEZ;
-      else if (tag === '[MINISTERIO PÚBLICO]:') speaker = Speaker.MINISTERIO_PUBLICO;
-      else if (tag === '[DEFENSA]:') speaker = Speaker.DEFENSA;
-      else if (tag === '[TESTIGO]:') speaker = Speaker.TESTIGO;
-      else if (tag === '[SECRETARIO]:') speaker = Speaker.SECRETARIO;
+    for (let part of parts) {
+      if (!part.trim()) continue; // Ignore empty/whitespace parts
 
-      if (speaker) {
-        // Anti-impersonation guard
-        if (turnManager && !turnManager.validateAIMessage(speaker)) {
-          console.warn(`[App] Discarding AI message impersonating user: ${speaker}`);
-          i++;
-          continue;
+      // Check if this part is a tag
+      const tagMatch = part.match(/^\[(JUEZ|MINISTERIO P[ÚU]BLICO|DEFENSA|TESTIGO|SECRETARIO)\]\s*:$/i);
+
+      if (tagMatch) {
+        // Normalize role string to uppercase standard
+        const roleStr = tagMatch[1].toUpperCase().replace('PUBLICO', 'PÚBLICO');
+
+        switch (roleStr) {
+          case 'JUEZ': currentSpeaker = Speaker.JUEZ; break;
+          case 'MINISTERIO PÚBLICO': currentSpeaker = Speaker.MINISTERIO_PUBLICO; break;
+          case 'DEFENSA': currentSpeaker = Speaker.DEFENSA; break;
+          case 'TESTIGO': currentSpeaker = Speaker.TESTIGO; break;
+          case 'SECRETARIO': currentSpeaker = Speaker.SECRETARIO; break;
         }
-        messages.push({ speaker, text: content, id: crypto.randomUUID() });
-        i++;
-      } else if (messages.length > 0) {
-        messages[messages.length - 1].text += tag;
-      } else if (tag) {
-        // Handles text before the first tag, attributing it to the first speaker.
-        const firstMessageMatch = text.match(/(\[JUEZ\]:|\[MINISTERIO PÚBLICO\]:|\[DEFENSA\]:|\[TESTIGO\]:|\[SECRETARIO\]:)/);
-        if (firstMessageMatch) {
-          const firstTag = firstMessageMatch[1].trim();
-          let firstSpeaker: Speaker = Speaker.JUEZ;
-          if (firstTag === '[MINISTERIO PÚBLICO]:') firstSpeaker = Speaker.MINISTERIO_PUBLICO;
-          if (firstTag === '[DEFENSA]:') firstSpeaker = Speaker.DEFENSA;
-          if (firstTag === '[TESTIGO]:') firstSpeaker = Speaker.TESTIGO;
-          if (firstTag === '[SECRETARIO]:') firstSpeaker = Speaker.SECRETARIO;
-          messages.push({ speaker: firstSpeaker, text: tag, id: crypto.randomUUID() })
+      } else {
+        // It's content
+        if (currentSpeaker) {
+          // Anti-impersonation guard
+          if (turnManager && !turnManager.validateAIMessage(currentSpeaker)) {
+            console.warn(`[App] Discarding AI message impersonating user: ${currentSpeaker}`);
+            continue;
+          }
+
+          // Append to messages
+          // Check if we should append to last message if speaker is same? 
+          // Current logic makes new message for every block. That is fine.
+          messages.push({
+            speaker: currentSpeaker,
+            text: part.trim(),
+            id: crypto.randomUUID()
+          });
         }
       }
     }
