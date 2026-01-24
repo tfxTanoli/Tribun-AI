@@ -12,9 +12,6 @@ const VOICE_OPTIONS = [
   { id: 'es-US-Neural2-A', name: 'Female - Professional (LatAm/US)', gender: 'FEMALE' },
   { id: 'es-US-News-F', name: 'Female - Soft (LatAm/US)', gender: 'FEMALE' },
   { id: 'es-US-Polyglot-1', name: 'Male - Deep (LatAm/US)', gender: 'MALE' },
-  { id: 'es-MX-Standard-A', name: 'Female - Professional (Mexico)', gender: 'FEMALE' },
-  { id: 'es-MX-Standard-B', name: 'Male - Authoritative (Mexico)', gender: 'MALE' },
-  { id: 'es-MX-Standard-C', name: 'Female - Soft (Mexico)', gender: 'FEMALE' },
 ];
 
 // Default voice assignments

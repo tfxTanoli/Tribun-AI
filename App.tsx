@@ -507,7 +507,7 @@ const App: React.FC = () => {
 
   const sendSystemMessage = async (message: string) => {
     if (!chatSessionRef.current) return;
-    const streamPromise = continueChat(chatSessionRef.current, message);
+    const streamPromise = continueChat(chatSessionRef.current, message, chatHistory);
     await processAIStream(streamPromise, false);
   };
 
@@ -569,7 +569,7 @@ const App: React.FC = () => {
     setChatHistory(prev => [...prev, userMessage]);
     setUserInput('');
 
-    const streamPromise = continueChat(chatSessionRef.current, userInput);
+    const streamPromise = continueChat(chatSessionRef.current, userInput, chatHistory);
     await processAIStream(streamPromise);
   };
 
@@ -603,7 +603,8 @@ const App: React.FC = () => {
 
     const streamPromise = continueChat(
       chatSessionRef.current,
-      objectionMessageText
+      objectionMessageText,
+      chatHistory
     );
     processAIStream(streamPromise);
   };

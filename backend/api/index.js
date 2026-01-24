@@ -3,23 +3,22 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
-import { v4 as uuidv4 } from 'uuid';
 import bodyParser from 'body-parser';
 
 dotenv.config({ path: '.env.local' });
 
 const app = express();
-const port = 3001; // Running on 3001 to avoid conflict with Vite (3000)
+const port = 3001;
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50mb' })); // Increased limit for history
 
 // Status check endpoint
 app.get('/', (req, res) => {
     res.json({
         status: "online",
         message: "TribunAI Backend is running successfully",
-        role: "API Server",
+        role: "API Server (Stateless)",
         timestamp: new Date().toISOString()
     });
 });
@@ -27,27 +26,26 @@ app.get('/', (req, res) => {
 const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) {
     console.error("ERROR: GEMINI_API_KEY is not set in .env.local");
-    process.exit(1);
+    // Don't exit in production/Vercel - the error will surface at runtime
+    if (process.env.NODE_ENV !== 'production') {
+        process.exit(1);
+    }
 }
 
-const ai = new GoogleGenAI({ apiKey: apiKey });
+const ai = apiKey ? new GoogleGenAI({ apiKey: apiKey }) : null;
 
-// In-memory store for chat sessions (Simple/Naive implementation for single-user dev)
-// structure: { sessionId: { chatSession: ChatObject, history: [] } }
-const sessions = {};
-
-// Helper to generate system instruction (Copied from geminiService.ts logic)
-// ideally this should be shared, but for now we duplicate to keep server standalone
-const generateSystemInstruction = (config, dynamicContext) => {
-    // ... [Logic from geminiService.ts needs to be migrated here]
-    // Since the logic is complex and involves templating, we will accept the *compiled* systemInstruction from the client 
-    // to avoid duplicating all the string templates and types here. 
-    // Security Note: Trusting system prompt from client is acceptable here as we are protecting *keys*, 
-    // not necessarily enforcing prompt strictness against the authorized user.
-    return config.systemInstruction;
+// Helper to check if AI is initialized
+const checkAI = (res) => {
+    if (!ai) {
+        res.status(500).json({ error: "GEMINI_API_KEY not configured on server" });
+        return false;
+    }
+    return true;
 };
 
 app.post('/api/generate-context', async (req, res) => {
+    if (!checkAI(res)) return;
+
     try {
         const { prompt } = req.body;
         const stream = await ai.models.generateContentStream({
@@ -59,7 +57,6 @@ app.post('/api/generate-context', async (req, res) => {
         res.setHeader('Content-Type', 'text/plain');
 
         for await (const chunk of stream) {
-            // SDK returns chunk.text as property, not method
             const text = typeof chunk.text === 'function' ? chunk.text() : chunk.text;
             if (text) {
                 res.write(text);
@@ -72,13 +69,19 @@ app.post('/api/generate-context', async (req, res) => {
     }
 });
 
+/**
+ * STATELESS CHAT START
+ * Returns the initial AI response and the system instruction for re-use
+ */
 app.post('/api/chat/start', async (req, res) => {
+    if (!checkAI(res)) return;
+
     try {
-        const { systemInstruction, initialMessage, modelName } = req.body;
-        const sessionId = uuidv4();
+        const { systemInstruction, initialMessage } = req.body;
 
-        const model = 'gemini-2.0-flash'; // Using available model
+        const model = 'gemini-2.0-flash';
 
+        // Create chat session (no persistence needed - just for this request)
         const chat = ai.chats.create({
             model: model,
             config: {
@@ -87,13 +90,12 @@ app.post('/api/chat/start', async (req, res) => {
             },
         });
 
-        sessions[sessionId] = chat;
-
         // Start the stream
         const result = await chat.sendMessageStream({ message: initialMessage });
 
         res.setHeader('Content-Type', 'text/plain');
-        res.setHeader('X-Session-ID', sessionId); // Send session ID in header
+        // Return system instruction hash for client to use in continue calls
+        res.setHeader('X-System-Instruction-Hash', 'stateless-mode');
 
         for await (const chunk of result) {
             const text = typeof chunk.text === 'function' ? chunk.text() : chunk.text;
@@ -109,15 +111,34 @@ app.post('/api/chat/start', async (req, res) => {
     }
 });
 
+/**
+ * STATELESS CHAT CONTINUE
+ * Accepts the full conversation history and system instruction
+ * Recreates the chat context on each call
+ */
 app.post('/api/chat/continue', async (req, res) => {
-    try {
-        const { sessionId, message } = req.body;
-        const chat = sessions[sessionId];
+    if (!checkAI(res)) return;
 
-        if (!chat) {
-            return res.status(404).json({ error: "Session not found or expired" });
+    try {
+        const { systemInstruction, history, message } = req.body;
+
+        if (!systemInstruction) {
+            return res.status(400).json({ error: "systemInstruction is required for stateless mode" });
         }
 
+        const model = 'gemini-2.0-flash';
+
+        // Create chat session with history
+        const chat = ai.chats.create({
+            model: model,
+            config: {
+                systemInstruction: systemInstruction,
+                temperature: 0.6,
+            },
+            history: history || [] // Pass conversation history to recreate context
+        });
+
+        // Send the new message
         const result = await chat.sendMessageStream({ message });
 
         res.setHeader('Content-Type', 'text/plain');
@@ -136,13 +157,14 @@ app.post('/api/chat/continue', async (req, res) => {
 });
 
 app.post('/api/ask-professor', async (req, res) => {
+    if (!checkAI(res)) return;
+
     try {
         const { prompt } = req.body;
         const response = await ai.models.generateContent({
             model: 'gemini-2.0-flash',
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
-
 
         const text = typeof response.text === 'function' ? response.text() : response.text;
         res.json({ text });
@@ -154,12 +176,10 @@ app.post('/api/ask-professor', async (req, res) => {
 });
 
 app.post('/api/evaluate', async (req, res) => {
+    if (!checkAI(res)) return;
+
     try {
         const { prompt, schema } = req.body;
-
-        // For structured output, we might need specific handling or just raw text parsing if schema passing is complex via JSON
-        // The SDK supports responseSchema. 
-        // We will pass the schema config if provided.
 
         const config = {
             responseMimeType: "application/json",
@@ -185,6 +205,8 @@ app.post('/api/evaluate', async (req, res) => {
 });
 
 app.post('/api/generate-config', async (req, res) => {
+    if (!checkAI(res)) return;
+
     try {
         const { prompt, schema } = req.body;
         const response = await ai.models.generateContent({

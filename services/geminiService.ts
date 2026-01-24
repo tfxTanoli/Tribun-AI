@@ -2,12 +2,12 @@
 import { GenerateContentResponse, Chat } from "@google/genai";
 import { Evaluation, SimulationConfig, Speaker, ChatMessage } from '../types';
 
-// We just mock the Chat interface since we don't have the SDK class anymore, 
-// to avoid rewriting App.tsx entirely.
-// ID is string, but App.tsx expects 'Chat' object. 
-// We will create a fake object that holds the sessionId.
-interface RemoteChatSession {
-  sessionId: string;
+// Stateless chat session interface
+// Stores the system instruction for use in subsequent calls
+// The history is managed by App.tsx (chatHistory state)
+interface StatelessChatSession {
+  systemInstruction: string;
+  ready: boolean;
 }
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -52,16 +52,11 @@ export const startChatSession = (config: SimulationConfig, dynamicContext: strin
     ? "Inicia la audiencia. Recuerda nunca hablar por el usuario."
     : `Contexto de resoluciones previas: "${dynamicContext}". Basado en esto, inicia formalmente la audiencia en la etapa de "${config.subStage}". Empieza con un breve resumen del estado actual para efectos de registro y luego otorga la palabra a quien corresponda. Recuerda nunca hablar por el usuario.`;
 
-  // We can't await here because this function is synchronous in the original signature?
-  // Actually the original returned { session, streamPromise }.
-  // So we can start the fetch inside the promise.
-
-  let sessionIdResolver: (id: string | null) => void;
-  const sessionIdPromise = new Promise<string | null>(resolve => sessionIdResolver = resolve);
-
-  // Mock session object that App.tsx will hold
-  const sessionMock = {
-    sessionIdPromise: sessionIdPromise
+  // STATELESS SESSION: Store system instruction for re-use in continue calls
+  // No server-side session ID needed - we send history with each request
+  const sessionMock: StatelessChatSession = {
+    systemInstruction: systemInstruction,
+    ready: true
   };
 
   const streamPromise = (async function* () {
@@ -76,22 +71,14 @@ export const startChatSession = (config: SimulationConfig, dynamicContext: strin
         })
       });
     } catch (e) {
-      if (sessionIdResolver) sessionIdResolver(null); // Ensure unblock
+      sessionMock.ready = false;
       throw e;
     }
 
     if (!response.ok) {
-      if (sessionIdResolver) sessionIdResolver(null); // Ensure unblock
+      sessionMock.ready = false;
       const errorText = await response.text();
       throw new Error(`Chat Start Error (${response.status}): ${errorText}`);
-    }
-
-    const sessId = response.headers.get('X-Session-ID');
-    if (sessId && sessionIdResolver) {
-      sessionIdResolver(sessId);
-    } else if (sessionIdResolver) {
-      console.warn("No X-Session-ID header in start response");
-      sessionIdResolver(null); // Resolve with null so we don't hang, but next call might fail
     }
 
     if (!response.body) throw new Error("No response body from chat start");
@@ -111,20 +98,31 @@ export const startChatSession = (config: SimulationConfig, dynamicContext: strin
   return { session: sessionMock, streamPromise: Promise.resolve(streamPromise) };
 };
 
-export const continueChat = async (session: any, message: string): Promise<AsyncGenerator<GenerateContentResponse>> => {
-  const sessionId = await session.sessionIdPromise;
-
-  if (!sessionId) {
-    // If we never got a session ID, we can't continue the chat on the server properly.
-    // However, to prevent UI freeze, we throw an error here so App.tsx catches it.
-    throw new Error("Cannot continue chat: No Session ID was initialized.");
+/**
+ * STATELESS CONTINUE CHAT
+ * Sends the full conversation history and system instruction with each request
+ * This allows the backend to recreate the chat context without session storage
+ */
+export const continueChat = async (session: any, message: string, chatHistory?: ChatMessage[]): Promise<AsyncGenerator<GenerateContentResponse>> => {
+  if (!session.ready || !session.systemInstruction) {
+    throw new Error("Cannot continue chat: Session not properly initialized.");
   }
+
+  // Convert chatHistory to the format expected by the Gemini API
+  const history = chatHistory ? chatHistory.map(msg => ({
+    role: msg.speaker === Speaker.DEFENSA || msg.speaker === Speaker.MINISTERIO_PUBLICO ? 'user' : 'model',
+    parts: [{ text: `[${msg.speaker}]: ${msg.text}` }]
+  })) : [];
 
   return (async function* () {
     const response = await fetch(`${API_BASE}/api/chat/continue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, message })
+      body: JSON.stringify({
+        systemInstruction: session.systemInstruction,
+        history,
+        message
+      })
     });
 
     if (!response.ok) {
