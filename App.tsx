@@ -673,14 +673,15 @@ const App: React.FC = () => {
     }
   };
 
-  // FIX: Mute now uses AudioService.setMuted() to preserve queue and position
-  // Instead of cancelling all audio, we just silence the output
+  // FIX: Mute now pauses playback (setMuted calls pause/resume)
+  // We sync isSpeechPaused state to match
   const handleMuteToggle = () => {
-    setIsTtsEnabled(prev => {
-      const newState = !prev;
-      audioService.setMuted(!newState); // muted = !ttsEnabled
-      return newState;
-    });
+    const newTtsEnabled = !isTtsEnabled;
+    setIsTtsEnabled(newTtsEnabled);
+    audioService.setMuted(!newTtsEnabled);
+
+    // Sync pause state: Muting = Pausing, Unmuting = Resuming
+    setIsSpeechPaused(!newTtsEnabled);
   };
 
   const handlePauseResumeClick = () => {
@@ -688,6 +689,12 @@ const App: React.FC = () => {
     if (isSpeechPaused) {
       audioService.resume();
       setIsSpeechPaused(false);
+
+      // FIX: Auto-unmute when resuming manually
+      if (!isTtsEnabled) {
+        setIsTtsEnabled(true);
+        audioService.setMuted(false);
+      }
     } else {
       audioService.pause();
       setIsSpeechPaused(true);

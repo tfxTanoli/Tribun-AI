@@ -630,8 +630,8 @@ export class AudioService {
             this.currentPlaybackResolver = resolve;
             this.currentAudio = new Audio(audioUrl);
 
-            // FIX: Apply mute state as volume (0 = muted, 1 = unmuted)
-            this.currentAudio.volume = this.isMuted ? 0 : 1;
+            // FIX: Volume always 1, logic now handled by pause/resume in setMuted
+            this.currentAudio.volume = 1;
 
             this.setPlayingState(true);
 
@@ -815,16 +815,18 @@ export class AudioService {
     }
 
     /**
-     * Sets muted state - muting preserves audio position and queue, just silences output.
-     * FIX: Proper mute implementation that doesn't cancel the queue.
+     * Sets muted state.
+     * FIX: Mute now pauses playback to preserve position and queue state.
+     * Unmute resumes from exactly where it left off.
      */
     public setMuted(muted: boolean): void {
         this.isMuted = muted;
-        if (this.currentAudio) {
-            // Apply volume change immediately to current audio
-            this.currentAudio.volume = muted ? 0 : 1;
+        if (muted) {
+            this.pause(); // Pause playback (stops time, preserves queue)
+        } else {
+            this.resume(); // Resume playback (starts time, continues queue)
         }
-        console.log(`[AudioService] Muted: ${muted}`);
+        console.log(`[AudioService] Muted (Paused): ${muted}`);
     }
 
     /**
