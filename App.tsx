@@ -229,15 +229,18 @@ const App: React.FC = () => {
     }
 
     // Parse Turn Tag
-    // FIX: Removed 'i' flag to enforce strict case matching for the tag key [TURNO: ...].
-    // This prevents false positives if the AI casually mentions a role in brackets or uses a non-standard tag.
-    // Also handling accent variations in regex just in case.
-    const turnRegex = /\[TURNO:\s*(Juez|Ministerio P[uú]blico|Defensa|Testigo|Secretario)\]\s*$/;
+    // FIX: Removed '$' anchor to allow detecting turn tag even if AI hallucinates text after it.
+    // FIX: We TRUNCATE anything after the tag effectively silencing the hallucination.
+    const turnRegex = /\[TURNO:\s*(Juez|Ministerio P[uú]blico|Defensa|Testigo|Secretario)\]/i;
     const match = text.match(turnRegex);
     let nextTurn = null;
 
     if (match && match[1]) {
-      text = text.replace(turnRegex, '').trim();
+      // Truncate text at the start of the match to remove the tag AND any subsequent hallucinations
+      if (match.index !== undefined) {
+        text = text.substring(0, match.index).trim();
+      }
+
       const roleStr = match[1].toLowerCase();
 
       const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
