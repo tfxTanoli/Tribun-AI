@@ -59,9 +59,15 @@ export class TurnManager {
     }
 
     // If AI audio is playing, it's still AI's turn even if currentTurn changed
+    // If AI audio is playing, it's still AI's turn even if currentTurn changed
     if (isSpeaking) {
       return TurnState.AI_TURN;
     }
+
+    // FIX: Explicitly treat IMPUTADO and MINISTERIO_PUBLICO (if not user) as AI_TURN
+    // This is a safety net against simulation state glitches.
+    if (currentTurn === Speaker.IMPUTADO) return TurnState.AI_TURN;
+    if (currentTurn && !this.isUserSpeaker(currentTurn)) return TurnState.AI_TURN;
 
     // Check if it's user's turn based on speaker
     if (currentTurn !== null && this.isUserSpeaker(currentTurn)) {

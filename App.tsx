@@ -475,8 +475,16 @@ const App: React.FC = () => {
 
         // TURN RESOLUTION: Always resolve to a valid turn
         if (!nextTurn) {
-          console.warn("[App] No turn marker found, defaulting to user");
-          setCurrentTurn(simulationConfig?.userRole || Speaker.DEFENSA);
+          // FIX: Smarter fallback. If AI just narrated Imputado or MP lines but forgot the tag, 
+          // do NOT give control to user.
+          const lowerText = accumulatedText.toLowerCase();
+          if (lowerText.includes('[imputado]') || lowerText.includes('[ministerio público]')) {
+            console.warn("[App] No turn marker found, but context implies AI turn. Defaulting to JUEZ.");
+            setCurrentTurn(Speaker.JUEZ);
+          } else {
+            console.warn("[App] No turn marker found, defaulting to user");
+            setCurrentTurn(simulationConfig?.userRole || Speaker.DEFENSA);
+          }
         } else if (turnManagerRef.current?.isUserSpeaker(nextTurn)) {
           setCurrentTurn(nextTurn);
         } else if (turnManagerRef.current?.isAISpeaker(nextTurn)) {

@@ -545,7 +545,7 @@ const generateSystemInstruction = (config: SimulationConfig, dynamicContext: str
           - \`[DEFENSA]:\`
           - \`[TESTIGO]:\`
           - \`[SECRETARIO]:\`
-          - \`[IMPUTADO]:\` (Solo para respuestas cortas y factuales)
+          - \`[IMPUTADO]:\` (Solo para respuestas cortas y factuales. **OBLIGATORIO: Inmediatamente después de una línea de Imputado, DEBES escribir \`[TURNO: Juez]\` o que hable el Juez. El Imputado NUNCA se queda con el turno.**)
       b. **ROLES PROHIBIDOS:** NUNCA generes diálogo para \`[${userRole.toUpperCase()}]:\`.
   
   Al finalizar el juicio, escribe: **FIN DE LA SIMULACIÓN**.
