@@ -1,7 +1,0 @@
-Checking voices...
-VOICE: es-ES-Neural2-A | API SAYS: FEMALE
-VOICE: es-ES-Neural2-F | API SAYS: MALE
-VOICE: es-US-Neural2-A | API SAYS: FEMALE
-VOICE: es-US-Neural2-B | API SAYS: MALE
-VOICE: es-US-Neural2-A | API SAYS: FEMALE
-VOICE: es-US-Neural2-B | API SAYS: MALE

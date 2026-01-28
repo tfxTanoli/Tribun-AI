@@ -231,7 +231,7 @@ const App: React.FC = () => {
     // Parse Turn Tag
     // FIX: Removed '$' anchor to allow detecting turn tag even if AI hallucinates text after it.
     // FIX: We TRUNCATE anything after the tag effectively silencing the hallucination.
-    const turnRegex = /\[TURNO:\s*(Juez|Ministerio P[uú]blico|Defensa|Testigo|Secretario)\]/i;
+    const turnRegex = /\[TURNO:\s*(Juez|Ministerio P[uú]blico|Defensa|Testigo|Secretario|Imputado)\]/i;
     const match = text.match(turnRegex);
     let nextTurn = null;
 
@@ -250,6 +250,7 @@ const App: React.FC = () => {
       else if (normalize(roleStr) === normalize(Speaker.DEFENSA.toLowerCase())) nextTurn = Speaker.DEFENSA;
       else if (normalize(roleStr) === normalize(Speaker.TESTIGO.toLowerCase())) nextTurn = Speaker.TESTIGO;
       else if (normalize(roleStr) === normalize(Speaker.SECRETARIO.toLowerCase())) nextTurn = Speaker.SECRETARIO;
+      else if (normalize(roleStr) === normalize(Speaker.IMPUTADO.toLowerCase())) nextTurn = Speaker.IMPUTADO;
     }
 
     return { cleanText: text, nextTurn, detectedStage };
@@ -349,7 +350,7 @@ const App: React.FC = () => {
   const parseAIResponse = (text: string): ChatMessageType[] => {
     const messages: ChatMessageType[] = [];
     // Robust regex: case insensitive, handles accents (público/publico), optional spaces
-    const taglineRegex = /(\[(?:JUEZ|MINISTERIO P[ÚU]BLICO|DEFENSA|TESTIGO|SECRETARIO)\]\s*:)/gi;
+    const taglineRegex = /(\[(?:JUEZ|MINISTERIO P[ÚU]BLICO|DEFENSA|TESTIGO|SECRETARIO|IMPUTADO)\]\s*:)/gi;
 
     // Split and keep delimiters
     const parts = text.split(taglineRegex);
@@ -361,7 +362,7 @@ const App: React.FC = () => {
       if (!part.trim()) continue; // Ignore empty/whitespace parts
 
       // Check if this part is a tag
-      const tagMatch = part.match(/^\[(JUEZ|MINISTERIO P[ÚU]BLICO|DEFENSA|TESTIGO|SECRETARIO)\]\s*:$/i);
+      const tagMatch = part.match(/^\[(JUEZ|MINISTERIO P[ÚU]BLICO|DEFENSA|TESTIGO|SECRETARIO|IMPUTADO)\]\s*:$/i);
 
       if (tagMatch) {
         // Normalize role string to uppercase standard
@@ -373,6 +374,7 @@ const App: React.FC = () => {
           case 'DEFENSA': currentSpeaker = Speaker.DEFENSA; break;
           case 'TESTIGO': currentSpeaker = Speaker.TESTIGO; break;
           case 'SECRETARIO': currentSpeaker = Speaker.SECRETARIO; break;
+          case 'IMPUTADO': currentSpeaker = Speaker.IMPUTADO; break;
         }
       } else {
         // It's content

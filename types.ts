@@ -5,6 +5,7 @@ export enum Speaker {
   TESTIGO = "Testigo",
   PROFESOR = "Profesor",
   SECRETARIO = "Secretario",
+  IMPUTADO = "Imputado",
 }
 
 export interface VoiceOption {

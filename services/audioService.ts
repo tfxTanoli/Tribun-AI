@@ -77,7 +77,8 @@ export class AudioService {
         [Speaker.DEFENSA, ['es-ES-Neural2-A', 'es-ES-Neural2-E', 'es-US-News-F']], // Female fallbacks
         [Speaker.TESTIGO, ['es-US-Neural2-A', 'es-ES-Neural2-E', 'es-ES-Neural2-A']], // Female fallbacks
         [Speaker.PROFESOR, ['es-ES-Neural2-A', 'es-US-Neural2-A', 'es-ES-Neural2-E']], // Female fallbacks
-        [Speaker.SECRETARIO, ['es-ES-Neural2-A', 'es-US-Neural2-A', 'es-ES-Neural2-E']] // Female fallbacks
+        [Speaker.SECRETARIO, ['es-ES-Neural2-A', 'es-US-Neural2-A', 'es-ES-Neural2-E']], // Female fallbacks
+        [Speaker.IMPUTADO, ['es-MX-Standard-B', 'es-US-Polyglot-1', 'es-ES-Neural2-F']] // Male fallbacks
     ]);
 
     // Voice mapping for each speaker
@@ -123,6 +124,13 @@ export class AudioService {
             ssmlGender: 'FEMALE',
             pitch: 0.5,
             speakingRate: 1.05
+        }],
+        [Speaker.IMPUTADO, {
+            languageCode: 'es-MX',
+            name: 'es-MX-Standard-B', // Standard Mexican Male
+            ssmlGender: 'MALE',
+            pitch: -1.0,
+            speakingRate: 0.95
         }]
     ]);
 
